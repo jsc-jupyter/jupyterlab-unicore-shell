@@ -103,7 +103,7 @@ async function activate(
         for (const widget of app.shell.widgets('main')) {
           if (
             widget.node.dataset.myCustomId ===
-            `${system.toLowerCase}-terminal-001`
+            `${system.toLowerCase()}-terminal-001`
           ) {
             app.shell.activateById(widget.id);
             return;
@@ -130,7 +130,7 @@ async function activate(
           translator
         );
 
-        shellTerminal.node.dataset.myCustomId = `${system.toLowerCase}-terminal-001`;
+        shellTerminal.node.dataset.myCustomId = `${system.toLowerCase()}-terminal-001`;
         shellTerminal.title.label = system;
         shellTerminal.title.closable = true;
         shellTerminal.title.icon = terminalIcon;
