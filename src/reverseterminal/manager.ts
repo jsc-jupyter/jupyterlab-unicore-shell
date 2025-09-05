@@ -16,6 +16,10 @@ export class CustomTerminalManager extends TerminalManager {
 
     super({ serverSettings });
   }
+
+  dispose(): void {
+    super.dispose();
+  }
 }
 
 import { ITranslator } from '@jupyterlab/translation';

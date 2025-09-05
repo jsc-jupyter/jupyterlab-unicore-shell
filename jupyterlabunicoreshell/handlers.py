@@ -1,22 +1,23 @@
 import asyncio
 import inspect
 import json
-import threading
 import os
+import socket
+import threading
+
 import pyunicore.client as uc_client
 import pyunicore.credentials as uc_credentials
 import pyunicore.forwarder as uc_forwarding
-
 from jupyter_server.base.handlers import APIHandler
 from jupyter_server.utils import url_path_join
 from tornado import web
-
-from traitlets.config import Configurable
-from traitlets import Any, Bool
 from tornado.iostream import StreamClosedError
+from traitlets import Any
+from traitlets import Bool
+from traitlets.config import Configurable
 
-import socket
 background_tasks = set()
+
 
 class UNICOREReverseShell(Configurable):
     enabled = Bool(
@@ -33,8 +34,17 @@ class UNICOREReverseShell(Configurable):
             return {}
         import re
         import requests
+
         try:
-            r = requests.get(f"{unity_userinfo_url}", headers={"Authorization": "Bearer {access_token}".format(access_token=access_token), "Accept": "application/json"})
+            r = requests.get(
+                f"{unity_userinfo_url}",
+                headers={
+                    "Authorization": "Bearer {access_token}".format(
+                        access_token=access_token
+                    ),
+                    "Accept": "application/json",
+                },
+            )
             r.raise_for_status()
         except:
             return {}
@@ -64,9 +74,11 @@ class UNICOREReverseShell(Configurable):
                 account = match.group("account")
                 system = match.group("systempartition")
                 if account == preferred_username:
-                    allowed_system = [x for x in allowed_systems if system.startswith(x)]
+                    allowed_system = [
+                        x for x in allowed_systems if system.startswith(x)
+                    ]
                     if len(allowed_system) > 0 and allowed_system[0] not in ret.keys():
-                        ret[allowed_system[0]] ={"url": getUrl(allowed_system[0])}
+                        ret[allowed_system[0]] = {"url": getUrl(allowed_system[0])}
 
         return ret
 
@@ -74,7 +86,7 @@ class UNICOREReverseShell(Configurable):
         example_system_config,
         help="""
         Dict containing the UNICORE/X urls for supported systems.
-        """
+        """,
     )
 
     async def get_system_config(self):
@@ -108,7 +120,9 @@ class UNICOREReverseShell(Configurable):
                 _access_token = await _access_token
         return _access_token
 
+
 shells = {}
+
 
 class ReverseShellJob:
     config = None
@@ -116,8 +130,13 @@ class ReverseShellJob:
     _clients = None
 
     log = None
+    uuid = None
     system = ""
     port = None
+
+    uc_job = None
+    uc_forward = None
+    uc_forward_thread = None
 
     background_forward_task = None
 
@@ -128,11 +147,11 @@ class ReverseShellJob:
 
     def unregister_client(self, q: asyncio.Queue):
         self._clients.remove(q)
-    
-    async def broadcast_status(self, msg, ready=False, failed=False, newline=True, host=None, port=None):
-        status = {
-            "newline": newline
-        }
+
+    async def broadcast_status(
+        self, msg, ready=False, failed=False, newline=True, host=None, port=None
+    ):
+        status = {"newline": newline}
         if ready:
             status["ready"] = True
         if failed:
@@ -149,11 +168,10 @@ class ReverseShellJob:
     def random_port(self):
         """Get a single random port."""
         sock = socket.socket()
-        sock.bind(('', 0))
+        sock.bind(("", 0))
         port = sock.getsockname()[1]
         sock.close()
         return port
-
 
     def __init__(self, config: UNICOREReverseShell, system: str, log):
         self.config = config
@@ -161,35 +179,46 @@ class ReverseShellJob:
         self.status = None
         self.log = log
         self._clients: list[asyncio.Queue] = []
-    
-    def port_forward(self, uc_job: uc_client.Job, credential, application_port: int, local_port: int):
-        endpoint = uc_job.resource_url + f"/forward-port?port={application_port}"
-        f = uc_forwarding.Forwarder(uc_client.Transport(credential), endpoint)
-        f.quiet = False
-        thread = threading.Thread(
-            target=f.run,
-            kwargs={"local_port": local_port},
-            daemon=True
+
+    def port_forward(self, credential, application_port: int, local_port: int):
+        endpoint = self.uc_job.resource_url + f"/forward-port?port={application_port}"
+        self.uc_forward = uc_forwarding.Forwarder(
+            uc_client.Transport(credential), endpoint
         )
-        thread.start()
+        self.uc_forward.quiet = False
+        self.uc_forward_thread = threading.Thread(
+            target=self.uc_forward.run, kwargs={"local_port": local_port}, daemon=True
+        )
+        self.uc_forward_thread.start()
 
     async def run(self, system):
         access_token = await self.config.get_access_token()
         if not access_token:
-            await self.broadcast_status("No access token available. Check configuration or env variable ACCESS_TOKEN", failed=True)
+            await self.broadcast_status(
+                "No access token available. Check configuration or env variable ACCESS_TOKEN",
+                failed=True,
+            )
         system_config = await self.config.get_system_config()
         if system not in system_config.keys():
-            await self.broadcast_status(f"System {system} not configured in {system_config.keys()}", failed=False)
+            await self.broadcast_status(
+                f"System {system} not configured in {system_config.keys()}",
+                failed=False,
+            )
             return
 
-        await self.broadcast_status(f"Create UNICORE Job to start terminal on {system}")
+        await self.broadcast_status(
+            f"Create UNICORE Job to start terminal on {system}:"
+        )
 
-        await self.broadcast_status("Create UNICORE credentials ...")
+        await self.broadcast_status("  Create UNICORE credentials ...")
         credential = uc_credentials.OIDCToken(access_token, None)
-        await self.broadcast_status("Create UNICORE client ...")
-        client = uc_client.Client(credential, system_config[system].get("url", "NoUrlConfigured"))
+        await self.broadcast_status(" done", newline=False)
+        await self.broadcast_status("  Create UNICORE client ...")
+        client = uc_client.Client(
+            credential, system_config[system].get("url", "NoUrlConfigured")
+        )
 
-        await self.broadcast_status("Create UNICORE client done.")
+        await self.broadcast_status(" done", newline=False)
 
         shell_code = """
 module purge --force
@@ -262,49 +291,45 @@ if __name__ == "__main__":
         loop.start()
     finally:
         term_manager.shutdown()
-""".replace("{app_port}", f"{random_app_port}")
+""".replace(
+            "{app_port}", f"{random_app_port}"
+        )
 
         job_description = {
             "Job type": "ON_LOGIN_NODE",
             "Executable": "/bin/bash terminado.sh",
             "Imports": [
-                {
-                    "From": "inline://dummy",
-                    "To": "terminado.sh",
-                    "Data": [
-                        shell_code
-                    ]
-                },
-                {
-                    "From": "inline://dummy",
-                    "To": "terminal.py",
-                    "Data": [
-                        python_code
-                    ]
-                }
-            ]
+                {"From": "inline://dummy", "To": "terminado.sh", "Data": [shell_code]},
+                {"From": "inline://dummy", "To": "terminal.py", "Data": [python_code]},
+            ],
         }
 
-        await self.broadcast_status("Submit UNICORE Job ...")
-        uc_job = client.new_job(job_description)
+        await self.broadcast_status("  Submit UNICORE Job ...")
+        self.uc_job = client.new_job(job_description)
 
-        await self.broadcast_status("Submit UNICORE Job successful.")
+        await self.broadcast_status(" done", newline=False)
         status = None
-        while uc_job.status not in [uc_client.JobStatus.RUNNING, uc_client.JobStatus.FAILED, uc_client.JobStatus.SUCCESSFUL, uc_client.JobStatus.UNDEFINED]:
-            if status == uc_job.status:
+        while self.uc_job.status not in [
+            uc_client.JobStatus.RUNNING,
+            uc_client.JobStatus.FAILED,
+            uc_client.JobStatus.SUCCESSFUL,
+            uc_client.JobStatus.UNDEFINED,
+        ]:
+            if status == self.uc_job.status:
                 await self.broadcast_status(".", newline=False)
             else:
-                await self.broadcast_status(f"Waiting for Terminal to start. Current Status: {uc_job.status} ...")
-            status = uc_job.status
-            await asyncio.sleep(2)
+                await self.broadcast_status(
+                    f"  Waiting for UNICORE Job to start. Current Status: {self.uc_job.status} ..."
+                )
+            status = self.uc_job.status
+            await asyncio.sleep(1)
 
-
-        if uc_job.status in ["FAILED", "SUCCESSFUL", "DONE"]:
-            file_path = uc_job.working_dir.stat("stderr")
+        if self.uc_job.status in ["FAILED", "SUCCESSFUL", "DONE"]:
+            file_path = self.uc_job.working_dir.stat("stderr")
             file_size = file_path.properties["size"]
             await self.broadcast_status(f"Terminal could not be started.")
             if file_size == 0:
-                uc_logs = '\n'.join(uc_job.properties.get("log", []))
+                uc_logs = "\n".join(self.uc_job.properties.get("log", []))
                 await self.broadcast_status(f"Unicore Logs: {uc_logs}", failed=True)
             else:
                 offset = max(0, file_size - 4096)
@@ -312,15 +337,32 @@ if __name__ == "__main__":
                 msg = s.data.decode()
                 await self.broadcast_status(f"Stdout: {msg}", failed=True)
         else:
-            await self.broadcast_status("UNICORE Job is running. Connecting to terminal ...")
-        
-        await asyncio.sleep(2)
-        
-        local_port = self.random_port()
-        self.port_forward(uc_job, credential, random_app_port, local_port)
-        await self.broadcast_status("running", ready=True, port=local_port, host="localhost")
+            stdout_path = self.uc_job.working_dir.stat("stdout")
+            stderr_path = self.uc_job.working_dir.stat("stderr")
 
+            stdout_size = stdout_path.properties["size"]
+            stderr_size = stderr_path.properties["size"]
 
+            await self.broadcast_status(f"  Waiting for Terminal to start ...")
+
+            self.log.info(stdout_size)
+            self.log.info(stderr_size)
+            while stdout_size == 0:
+                self.log.info(stdout_size)
+                self.log.info(stderr_size)
+                await self.broadcast_status(".", newline=False)
+                await asyncio.sleep(1)
+                stdout_size = stdout_path.properties["size"]
+                stderr_size = stderr_path.properties["size"]
+
+            await self.broadcast_status(" done", newline=False)
+            await self.broadcast_status("  Connecting to terminal ...")
+
+            local_port = self.random_port()
+            self.port_forward(credential, random_app_port, local_port)
+            await self.broadcast_status(
+                " done", ready=True, newline=False, port=local_port, host="localhost"
+            )
 
 
 class ReverseShellAPIHandler(APIHandler):
@@ -328,11 +370,11 @@ class ReverseShellAPIHandler(APIHandler):
     keepalive_task = None
 
     def get_content_type(self):
-        return 'text/event-stream'
+        return "text/event-stream"
 
     async def send_event(self, event):
         try:
-            self.write(f'data: {json.dumps(event)}\n\n')
+            self.write(f"data: {json.dumps(event)}\n\n")
             await self.flush()
         except StreamClosedError:
             self.log.warning("Stream closed while handling %s", self.request.uri)
@@ -367,14 +409,16 @@ class ReverseShellAPIHandler(APIHandler):
         except:
             self.log.exception("Close keepalive")
 
-    async def get(self, system):        
+    async def get(self, system):
         self.set_header("Content-Type", "text/event-stream")
         self.set_header("Cache-Control", "no-cache")
         self.set_header("Connection", "keep-alive")
 
         self.keepalive_task = asyncio.create_task(self.keepalive())
         if system not in shells.keys():
-            shells[system] = ReverseShellJob(UNICOREReverseShell(config=self.config), system, log=self.log)
+            shells[system] = ReverseShellJob(
+                UNICOREReverseShell(config=self.config), system, log=self.log
+            )
         status = shells[system].status
         if not status:
             task = asyncio.create_task(shells[system].run(system))
@@ -394,8 +438,7 @@ class ReverseShellAPIHandler(APIHandler):
 
                 # Wait for either a status update or keepalive timeout
                 done, _ = await asyncio.wait(
-                    [get_task, self.keepalive_task],
-                    return_when=asyncio.FIRST_COMPLETED
+                    [get_task, self.keepalive_task], return_when=asyncio.FIRST_COMPLETED
                 )
                 if self.keepalive_task in done:
                     break
@@ -415,7 +458,7 @@ class ReverseShellAPIHandler(APIHandler):
 class ReverseShellInitAPIHandler(APIHandler):
     async def get(self):
         config = UNICOREReverseShell(config=self.config)
-        
+
         systems_config = await config.get_system_config()
         systems = list(systems_config.keys())
         self.set_status(200)
@@ -428,5 +471,8 @@ def setup_handlers(web_app):
 
     route_pattern_init = url_path_join(base_url, "jupyterlabunicoreshell")
     route_pattern = url_path_join(base_url, "jupyterlabunicoreshell", r"([^/]+)")
-    handlers = [(route_pattern, ReverseShellAPIHandler), (route_pattern_init, ReverseShellInitAPIHandler)]
+    handlers = [
+        (route_pattern, ReverseShellAPIHandler),
+        (route_pattern_init, ReverseShellInitAPIHandler),
+    ]
     web_app.add_handlers(host_pattern, handlers)

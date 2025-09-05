@@ -86,9 +86,7 @@ export class WaitingTerminalWidget extends Widget {
         this._ready.resolve();
 
         this.update();
-        this._term.write(
-          `Setting up your terminal session ${this._system}...`
-        );
+        this._term.write(`Setting up your terminal session ${this._system}...`);
 
         this._waitForTerminal(this._system);
       })
@@ -99,7 +97,7 @@ export class WaitingTerminalWidget extends Widget {
   }
 
   private printStatus(data: IShellStatusEvent) {
-    if ( data.newline !== false ) {
+    if (data.newline !== false) {
       this._term.writeln('');
       this._term.write(data.msg);
     } else {
