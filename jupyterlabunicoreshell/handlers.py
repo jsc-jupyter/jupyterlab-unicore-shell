@@ -233,7 +233,7 @@ if __name__ == "__main__":
     # Check every 10 seconds if no clients are connected
     def check_inactive():
         if not LaxTermSocket.active_clients:
-            print(f"{datetime.now()} - No clients connected. Scheduling shutdown in 60s...", flush=True)
+            print(f"{datetime.now()} - No clients connected. Scheduling shutdown after 60s...", flush=True)
             loop.call_later(60, shutdown_if_still_inactive)
 
     def shutdown_if_still_inactive():
