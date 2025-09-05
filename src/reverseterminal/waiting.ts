@@ -21,7 +21,7 @@ import type { WebLinksAddon } from '@xterm/addon-web-links';
 import type { WebglAddon } from '@xterm/addon-webgl';
 import { ITerminal } from '@jupyterlab/terminal';
 
-import { retrieveShell, ShellStatusEvent } from '../handler';
+import { retrieveShell, IShellStatusEvent } from '../handler';
 
 /**
  * The class name added to a terminal widget.
@@ -98,11 +98,15 @@ export class WaitingTerminalWidget extends Widget {
       });
   }
 
-  private printStatus(data: ShellStatusEvent) {
+  private printStatus(data: IShellStatusEvent) {
     this._term.writeln(data.msg);
     if (data.ready === true) {
-      if (data.port) this._port = data.port;
-      if (data.host) this._host = data.host;
+      if (data.port) {
+        this._port = data.port;
+      }
+      if (data.host) {
+        this._host = data.host;
+      }
       this._shellTermReady.resolve();
     }
   }
@@ -397,6 +401,7 @@ namespace Private {
   /**
    * An incrementing counter for ids.
    */
+  // eslint-disable-next-line prefer-const
   export let id = 0;
 
   /**
@@ -477,6 +482,7 @@ namespace Private {
    *
    * Reference: https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/By_example/Detect_WebGL
    */
+  // eslint-disable-next-line no-inner-declarations
   function hasWebGLContext(): boolean {
     // Create canvas element. The canvas is not added to the
     // document itself, so it is never displayed in the
@@ -495,8 +501,9 @@ namespace Private {
     }
   }
 
+  // eslint-disable-next-line no-inner-declarations
   function addRenderer(term: Xterm): void {
-    let renderer = new Renderer_();
+    const renderer = new Renderer_();
     term.loadAddon(renderer);
     if (supportWebGL) {
       (renderer as WebglAddon).onContextLoss(event => {

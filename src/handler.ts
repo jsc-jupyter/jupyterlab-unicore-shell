@@ -2,7 +2,7 @@ import { URLExt } from '@jupyterlab/coreutils';
 
 import { ServerConnection } from '@jupyterlab/services';
 
-export interface ShellStatusEvent {
+export interface IShellStatusEvent {
   msg: string;
   ready?: boolean;
   failed?: boolean;
@@ -69,7 +69,7 @@ export async function listSystems(): Promise<string[]> {
 
 export function retrieveShell(
   system: string,
-  onMessage: (message: ShellStatusEvent) => void,
+  onMessage: (message: IShellStatusEvent) => void,
   onError?: (error: any) => void
 ): EventSource {
   const settings = ServerConnection.makeSettings();
@@ -82,7 +82,7 @@ export function retrieveShell(
   const eventSource = new EventSource(requestUrl);
 
   eventSource.onmessage = (event: MessageEvent) => {
-    const data: ShellStatusEvent = JSON.parse(event.data);
+    const data: IShellStatusEvent = JSON.parse(event.data);
     onMessage(data);
     if (data.ready === true) {
       eventSource.close();
