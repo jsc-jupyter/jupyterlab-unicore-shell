@@ -128,8 +128,10 @@ class ReverseShellJob:
     def unregister_client(self, q: asyncio.Queue):
         self._clients.remove(q)
     
-    async def broadcast_status(self, msg, ready=False, failed=False, host=None, port=None):
-        status = {}
+    async def broadcast_status(self, msg, ready=False, failed=False, newline=True, host=None, port=None):
+        status = {
+            "newline": newline
+        }
         if ready:
             status["ready"] = True
         if failed:
@@ -284,9 +286,15 @@ if __name__ == "__main__":
         uc_job = client.new_job(job_description)
 
         await self.broadcast_status("Submit UNICORE Job successful.")
+        status = None
         while uc_job.status not in [uc_client.JobStatus.RUNNING, uc_client.JobStatus.FAILED, uc_client.JobStatus.SUCCESSFUL, uc_client.JobStatus.UNDEFINED]:
-            await self.broadcast_status(f"Waiting for Terminal to start. Current Status: {uc_job.status}")
+            if status == uc_job.status:
+                await self.broadcast_status(".", newline=False)
+            else:
+                await self.broadcast_status(f"Waiting for Terminal to start. Current Status: {uc_job.status} ...")
+            status = uc_job.status
             await asyncio.sleep(2)
+
 
         if uc_job.status in ["FAILED", "SUCCESSFUL", "DONE"]:
             file_path = uc_job.working_dir.stat("stderr")

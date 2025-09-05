@@ -135,9 +135,11 @@ async function activate(
         shellTerminal.title.closable = true;
         shellTerminal.title.icon = terminalIcon;
 
+        await shellTerminal.ready;
+
         app.shell.add(shellTerminal);
         app.shell.activateById(shellTerminal.id);
-        // waitTerminal.close();
+        waitTerminal.close();
       }
     });
     // Add the command to the launcher

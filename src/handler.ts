@@ -6,6 +6,7 @@ export interface IShellStatusEvent {
   msg: string;
   ready?: boolean;
   failed?: boolean;
+  newline?: boolean;
   port?: string;
   host?: string;
 }
