@@ -13,14 +13,14 @@
     },
     "license": "BSD-3-Clause",
     "authors": [
-      {
-        "name": "Tim Kreuzer",
-        "email": "t.kreuzer@fz-juelich.de"
-      },
-      {
-        "name": "Bernd Schuller",
-        "email": "b.schuller@fz-juelich.de"
-      }
+        {
+            "name": "Tim Kreuzer",
+            "email": "t.kreuzer@fz-juelich.de"
+        },
+        {
+            "name": "Bernd Schuller",
+            "email": "b.schuller@fz-juelich.de"
+        }
     ],
     "files": [
         "lib/**/*.{d.ts,eot,gif,html,jpg,js,js.map,json,png,svg,woff2,ttf}",

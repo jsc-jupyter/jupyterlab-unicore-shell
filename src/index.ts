@@ -115,7 +115,7 @@ async function activate(
         app.shell.add(waitTerminal, 'main');
         await waitTerminal.shellTermReady;
 
-        if ( !waitTerminal._failed ) {
+        if (!waitTerminal._failed) {
           const local_port = waitTerminal._port;
           const host = waitTerminal._host;
 
