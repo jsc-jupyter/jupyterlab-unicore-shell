@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import threading
 import os
 import pyunicore.client as uc_client
 import pyunicore.credentials as uc_credentials
@@ -28,6 +29,8 @@ class UNICOREReverseShell(Configurable):
     async def example_system_config(self):
         unity_userinfo_url = "https://login.jsc.fz-juelich.de/oauth2/userinfo"
         access_token = await self.get_access_token()
+        if not access_token:
+            return {}
         import re
         import requests
         try:
@@ -155,18 +158,16 @@ class ReverseShellJob:
         self.status = None
         self._clients: list[asyncio.Queue] = []
     
-    async def port_forward(self, uc_job: uc_client.Job, credential, application_port: int, local_port: int):
+    def port_forward(self, uc_job: uc_client.Job, credential, application_port: int, local_port: int):
         endpoint = uc_job.resource_url + f"/forward-port?port={application_port}"
         f = uc_forwarding.Forwarder(uc_client.Transport(credential), endpoint)
         f.quiet = False
-
-        # Run blocking forwarder in a thread
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(
-            asyncio.to_thread(f.run, local_port=local_port)
+        thread = threading.Thread(
+            target=f.run,
+            kwargs={"local_port": local_port},
+            daemon=True
         )
-        background_tasks.append(task)
-        task.add_done_callback(background_tasks.discard)
+        thread.start()
 
     async def run(self, system):
         access_token = await self.config.get_access_token()
@@ -222,7 +223,7 @@ class LaxTermSocket(terminado.TermSocket):
 if __name__ == "__main__":
     term_manager = terminado.UniqueTermManager(shell_command=["bash"])
     app = tornado.web.Application([
-        (r"/websocket", LaxTermSocket, {"term_manager": term_manager}),
+        (r"/terminals/websocket/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
     ])
     print(f"{datetime.now()} - Start listening on {app_port}", flush=True)
     httpserver = app.listen({app_port}, "0.0.0.0")
