@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v4.3.8
+_src_path: https://github.com/jupyterlab/extension-template
+author_email: t.kreuzer@fz-juelich.de
+author_name: Tim Kreuzer
+has_binder: false
+has_settings: false
+kind: server
+labextension_name: jupyterlabunicoreshell
+project_short_description: A JupyterLab extension to use reverse shells via UNICORE.
+python_name: jupyterlabunicoreshell
+repository: https://github.com/jsc-jupyter/jupyterlab-unicore-shell
+test: false
+

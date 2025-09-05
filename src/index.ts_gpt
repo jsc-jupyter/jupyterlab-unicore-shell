@@ -1,0 +1,64 @@
+import {
+  JupyterFrontEnd,
+  JupyterFrontEndPlugin
+} from '@jupyterlab/application';
+
+import {
+  Widget
+} from '@lumino/widgets';
+
+import { Terminal } from 'xterm';
+import { FitAddon } from 'xterm-addon-fit';
+import 'xterm/css/xterm.css';
+
+function createReverseShellWidget(): Widget {
+  const terminal = new Terminal();
+  const fitAddon = new FitAddon();
+  terminal.loadAddon(fitAddon);
+
+  const node = document.createElement('div');
+  const termContainer = document.createElement('div');
+  termContainer.style.height = '100%';
+  termContainer.style.width = '100%';
+  node.appendChild(termContainer);
+  terminal.open(termContainer);
+  fitAddon.fit();
+
+  // Connect to your reverse shell server
+  const socket = new WebSocket('ws://localhost:8765/websocket');
+  socket.onopen = () => terminal.write('\x1b[32mConnected to reverse shell\x1b[m\r\n');
+  socket.onmessage = (event) => terminal.write(event.data);
+  terminal.onData(data => socket.send(data));
+
+  const widget = new Widget({ node });
+  widget.id = 'reverse-terminal';
+  widget.title.label = 'Reverse Terminal';
+  widget.title.closable = true;
+
+  widget.node.style.padding = '10px';
+  widget.node.style.height = '100%';
+  widget.node.style.width = '100%';
+
+  return widget;
+}
+
+const reverseTerminalPlugin: JupyterFrontEndPlugin<void> = {
+  id: 'jupyterlabunicoreterminal:plugin',
+  autoStart: true,
+  activate: (app: JupyterFrontEnd) => {
+    app.commands.addCommand('reverse-terminal:open', {
+      label: 'Open Reverse Terminal',
+      execute: () => {
+        const widget = createReverseShellWidget();
+        app.shell.add(widget, 'main');
+        app.shell.activateById(widget.id);
+      }
+    });
+
+    app.restored.then(() => {
+      app.commands.execute('reverse-terminal:open');
+    });
+  }
+};
+
+export default reverseTerminalPlugin;
