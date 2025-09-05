@@ -56,6 +56,7 @@ export class WaitingTerminalWidget extends Widget {
     translator = translator || nullTranslator;
     this._trans = translator.load('jupyterlab');
 
+    this._failed = false;
     this._system = system;
     this._port = '';
     this._host = '';
@@ -110,6 +111,9 @@ export class WaitingTerminalWidget extends Widget {
       if (data.host) {
         this._host = data.host;
       }
+      this._shellTermReady.resolve();
+    } else if (data.failed === true) {
+      this._failed = true;
       this._shellTermReady.resolve();
     }
   }
@@ -384,6 +388,7 @@ export class WaitingTerminalWidget extends Widget {
   private _fitAddon!: FitAddon;
   public _port: string;
   public _host: string;
+  public _failed: boolean;
   private _system: string;
   private _needsResize = true;
   private _offsetWidth = -1;

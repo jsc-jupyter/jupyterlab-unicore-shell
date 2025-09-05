@@ -42,7 +42,7 @@ async function activate(
   palette: ICommandPalette | null,
   translator: ITranslator | undefined
 ): Promise<void> {
-  console.log('JupyterLab extension jupyterlabunicoreterminal is activated!2');
+  console.log('JupyterLab extension jupyterlabunicoreterminal is activated!');
   const { commands } = app;
   let waitTerminal: WaitingTerminalWidget;
   let shellTerminal: CustomTerminal;
@@ -60,9 +60,6 @@ async function activate(
       }
     }
   }
-
-  console.log(launcher);
-  console.log(settingRegistry);
 
   settingRegistry
     .load('@jupyterlab/terminal-extension:plugin')
@@ -118,28 +115,30 @@ async function activate(
         app.shell.add(waitTerminal, 'main');
         await waitTerminal.shellTermReady;
 
-        const local_port = waitTerminal._port;
-        const host = waitTerminal._host;
+        if ( !waitTerminal._failed ) {
+          const local_port = waitTerminal._port;
+          const host = waitTerminal._host;
 
-        const manager = new CustomTerminalManager(host, local_port);
-        const session = await manager.startNew();
-        shellTerminal = new CustomTerminal(
-          `reverse-shell-terminal-${system}`,
-          session,
-          options,
-          translator
-        );
+          const manager = new CustomTerminalManager(host, local_port);
+          const session = await manager.startNew();
+          shellTerminal = new CustomTerminal(
+            `reverse-shell-terminal-${system}`,
+            session,
+            options,
+            translator
+          );
 
-        shellTerminal.node.dataset.myCustomId = `${system.toLowerCase()}-terminal-001`;
-        shellTerminal.title.label = system;
-        shellTerminal.title.closable = true;
-        shellTerminal.title.icon = terminalIcon;
+          shellTerminal.node.dataset.myCustomId = `${system.toLowerCase()}-terminal-001`;
+          shellTerminal.title.label = system;
+          shellTerminal.title.closable = true;
+          shellTerminal.title.icon = terminalIcon;
 
-        await shellTerminal.ready;
+          await shellTerminal.ready;
 
-        app.shell.add(shellTerminal);
-        app.shell.activateById(shellTerminal.id);
-        waitTerminal.close();
+          app.shell.add(shellTerminal);
+          app.shell.activateById(shellTerminal.id);
+          waitTerminal.close();
+        }
       }
     });
     // Add the command to the launcher

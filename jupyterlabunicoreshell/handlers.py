@@ -8,6 +8,7 @@ import threading
 import pyunicore.client as uc_client
 import pyunicore.credentials as uc_credentials
 import pyunicore.forwarder as uc_forwarding
+import websockets
 from jupyter_server.base.handlers import APIHandler
 from jupyter_server.utils import url_path_join
 from tornado import web
@@ -161,7 +162,10 @@ class ReverseShellJob:
         if host:
             status["host"] = host
         status["msg"] = msg
-        self.status = status
+        if failed:
+            self.status = None
+        else:
+            self.status = status
         for q in self._clients:
             await q.put(status)
 
@@ -179,6 +183,27 @@ class ReverseShellJob:
         self.status = None
         self.log = log
         self._clients: list[asyncio.Queue] = []
+
+    async def wait_for_ws(self, url: str, retries: int = 2, delay: float = 1) -> bool:
+        """
+        Try connecting to a websocket until it's available or retries are exhausted.
+        """
+        for i in range(retries):
+            self.log.info(f"Try to reach {self.system} Websocket. Try {i}")
+            try:
+                async with websockets.connect(url):
+                    # Sucess
+                    self.log.info(
+                        f"Try to reach {self.system} Websocket. Try {i}: Success"
+                    )
+                    return True
+            except Exception:
+                self.log.exception(
+                    f"Try to reach {self.system} Websocket. Try {i}: Failed"
+                )
+                await asyncio.sleep(delay)
+        self.log.info(f"Try to reach {self.system} Websocket. Give up")
+        return False
 
     def port_forward(self, credential, application_port: int, local_port: int):
         endpoint = self.uc_job.resource_url + f"/forward-port?port={application_port}"
@@ -198,11 +223,12 @@ class ReverseShellJob:
                 "No access token available. Check configuration or env variable ACCESS_TOKEN",
                 failed=True,
             )
+            return
         system_config = await self.config.get_system_config()
         if system not in system_config.keys():
             await self.broadcast_status(
                 f"System {system} not configured in {system_config.keys()}",
-                failed=False,
+                failed=True,
             )
             return
 
@@ -331,11 +357,13 @@ if __name__ == "__main__":
             if file_size == 0:
                 uc_logs = "\n".join(self.uc_job.properties.get("log", []))
                 await self.broadcast_status(f"Unicore Logs: {uc_logs}", failed=True)
+                return
             else:
                 offset = max(0, file_size - 4096)
                 s = file_path.raw(offset=offset)
                 msg = s.data.decode()
                 await self.broadcast_status(f"Stdout: {msg}", failed=True)
+                return
         else:
             stdout_path = self.uc_job.working_dir.stat("stdout")
             stderr_path = self.uc_job.working_dir.stat("stderr")
@@ -360,9 +388,20 @@ if __name__ == "__main__":
 
             local_port = self.random_port()
             self.port_forward(credential, random_app_port, local_port)
+            ws_url = f"ws://localhost:{local_port}/terminals/websocket/1"
+
+            # wait until the websocket is alive
+            ws_available = await self.wait_for_ws(ws_url)
+            if not ws_available:
+                await self.broadcast_status(
+                    f"Could not reach Remote Shell on {system}. Please try again.",
+                    failed=True,
+                )
+                return
             await self.broadcast_status(
                 " done", ready=True, newline=False, port=local_port, host="localhost"
             )
+            return True
 
 
 class ReverseShellAPIHandler(APIHandler):
