@@ -11,7 +11,10 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { ITerminal } from '@jupyterlab/terminal';
 
-import { CustomTerminalManager, WaitingTerminalWidget } from './reverseterminal';
+import {
+  CustomTerminalManager,
+  WaitingTerminalWidget
+} from './reverseterminal';
 import { CustomTerminal } from './reverseterminal';
 import { ITranslator } from '@jupyterlab/translation';
 import { listSystems } from './handler';
@@ -19,7 +22,6 @@ import { listSystems } from './handler';
 /**
  * Initialization data for the jupyterlabunicoreterminal extension.
  */
-
 
 // const FACTORY = 'Editor';
 const PALETTE_CATEGORY = 'UNICORE Terminals';
@@ -59,20 +61,19 @@ async function activate(
     }
   }
 
-
   console.log(launcher);
   console.log(settingRegistry);
-  
+
   settingRegistry
-  .load('@jupyterlab/terminal-extension:plugin')
-  .then(settings => {
-    updateOptions(settings);
-    updateTerminals();
-    settings.changed.connect(() => {
+    .load('@jupyterlab/terminal-extension:plugin')
+    .then(settings => {
+      updateOptions(settings);
+      updateTerminals();
+      settings.changed.connect(() => {
         updateOptions(settings);
         updateTerminals();
+      });
     });
-  })
 
   function updateTerminals(): void {
     if (waitTerminal) {
@@ -90,7 +91,7 @@ async function activate(
   }
 
   const systems = await listSystems();
-  for ( const system of systems ) {
+  for (const system of systems) {
     const command = `reverse-unicore-terminal-${system}:create`;
     commands.addCommand(command, {
       label: system,
@@ -100,12 +101,15 @@ async function activate(
         console.log(`Start ${system} terminal`);
 
         for (const widget of app.shell.widgets('main')) {
-          if ( widget.node.dataset.myCustomId === `${system.toLowerCase}-terminal-001` ) {
+          if (
+            widget.node.dataset.myCustomId ===
+            `${system.toLowerCase}-terminal-001`
+          ) {
             app.shell.activateById(widget.id);
             return;
           }
         }
-        
+
         waitTerminal = new WaitingTerminalWidget(system, options, translator);
         waitTerminal.id = 'waiting-terminal';
         waitTerminal.title.icon = terminalIcon;
@@ -113,14 +117,19 @@ async function activate(
         waitTerminal.title.closable = true;
         app.shell.add(waitTerminal, 'main');
         await waitTerminal.shellTermReady;
-        
+
         const local_port = waitTerminal._port;
         const host = waitTerminal._host;
 
         const manager = new CustomTerminalManager(host, local_port);
         const session = await manager.startNew();
-        shellTerminal = new CustomTerminal(`reverse-shell-terminal-${system}`, session, options, translator);
-        
+        shellTerminal = new CustomTerminal(
+          `reverse-shell-terminal-${system}`,
+          session,
+          options,
+          translator
+        );
+
         shellTerminal.node.dataset.myCustomId = `${system.toLowerCase}-terminal-001`;
         shellTerminal.title.label = system;
         shellTerminal.title.closable = true;
@@ -139,7 +148,7 @@ async function activate(
         rank: 1
       });
     }
-  
+
     // Add the command to the palette
     if (palette) {
       palette.addItem({
@@ -148,9 +157,7 @@ async function activate(
         category: PALETTE_CATEGORY
       });
     }
-
   }
-
 }
 
 export default plugin;

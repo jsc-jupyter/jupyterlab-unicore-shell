@@ -2,7 +2,6 @@ import { URLExt } from '@jupyterlab/coreutils';
 
 import { ServerConnection } from '@jupyterlab/services';
 
-
 export interface ShellStatusEvent {
   msg: string;
   ready?: boolean;
@@ -59,7 +58,9 @@ export async function listSystems(): Promise<string[]> {
     const data = await requestAPI<any>();
     systems = data;
   } catch (reason) {
-    console.error(`UNICORE ReverseShell: Could not receive Systems.\n${reason}`);
+    console.error(
+      `UNICORE ReverseShell: Could not receive Systems.\n${reason}`
+    );
     throw new Error(`Failed to fetch systems\n${reason}`);
   }
   console.log(`Return ${systems}`);
@@ -83,12 +84,12 @@ export function retrieveShell(
   eventSource.onmessage = (event: MessageEvent) => {
     const data: ShellStatusEvent = JSON.parse(event.data);
     onMessage(data);
-    if ( data.ready === true ) {
+    if (data.ready === true) {
       eventSource.close();
     }
   };
 
-  eventSource.onerror = (event) => {
+  eventSource.onerror = event => {
     console.error(event);
     eventSource.close();
     if (onError) {

@@ -57,8 +57,8 @@ export class WaitingTerminalWidget extends Widget {
     this._trans = translator.load('jupyterlab');
 
     this._system = system;
-    this._port = "";
-    this._host = "";
+    this._port = '';
+    this._host = '';
 
     // Initialize settings.
     this._options = { ...ITerminal.defaultOptions, ...options };
@@ -86,7 +86,9 @@ export class WaitingTerminalWidget extends Widget {
         this._ready.resolve();
 
         this.update();
-        this._term.writeln(`Setting up your terminal session ${this._system}...`);
+        this._term.writeln(
+          `Setting up your terminal session ${this._system}...`
+        );
 
         this._waitForTerminal(this._system);
       })
@@ -98,15 +100,15 @@ export class WaitingTerminalWidget extends Widget {
 
   private printStatus(data: ShellStatusEvent) {
     this._term.writeln(data.msg);
-    if ( data.ready === true ) {
-      if ( data.port ) this._port = data.port;
-      if ( data.host ) this._host = data.host;
+    if (data.ready === true) {
+      if (data.port) this._port = data.port;
+      if (data.host) this._host = data.host;
       this._shellTermReady.resolve();
     }
   }
 
   private async _waitForTerminal(system: string) {
-      retrieveShell(system, (data) => this.printStatus(data));
+    retrieveShell(system, data => this.printStatus(data));
   }
 
   /**
