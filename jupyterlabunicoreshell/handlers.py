@@ -115,6 +115,7 @@ class ReverseShellJob:
     status = None
     _clients = None
 
+    log = None
     system = ""
     port = None
 
@@ -154,10 +155,11 @@ class ReverseShellJob:
         return port
 
 
-    def __init__(self, config: UNICOREReverseShell, system: str):
+    def __init__(self, config: UNICOREReverseShell, system: str, log):
         self.config = config
         self.system = system
         self.status = None
+        self.log = log
         self._clients: list[asyncio.Queue] = []
     
     def port_forward(self, uc_job: uc_client.Job, credential, application_port: int, local_port: int):
@@ -199,6 +201,7 @@ python3 terminal.py
 
         random_app_port = self.random_port()
         python_code = """
+import os
 import terminado
 import tornado.ioloop
 import tornado.web
@@ -223,7 +226,7 @@ class LaxTermSocket(terminado.TermSocket):
 
 
 if __name__ == "__main__":
-    term_manager = terminado.UniqueTermManager(shell_command=["bash"])
+    term_manager = terminado.UniqueTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
     app = tornado.web.Application([
         (r"/terminals/websocket/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
     ])
@@ -371,7 +374,7 @@ class ReverseShellAPIHandler(APIHandler):
 
         self.keepalive_task = asyncio.create_task(self.keepalive())
         if system not in shells.keys():
-            shells[system] = ReverseShellJob(UNICOREReverseShell(config=self.config), system)
+            shells[system] = ReverseShellJob(UNICOREReverseShell(config=self.config), system, log=self.log)
         status = shells[system].status
         if not status:
             task = asyncio.create_task(shells[system].run(system))
