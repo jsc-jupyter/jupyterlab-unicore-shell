@@ -121,7 +121,7 @@ async function activate(
 
           const manager = new CustomTerminalManager(host, local_port);
           const session_id = `${system}`;
-          const session = await manager.startNew({ name: session_id} );
+          const session = await manager.startNew({ name: session_id });
           shellTerminal = new CustomTerminal(
             session_id,
             session,

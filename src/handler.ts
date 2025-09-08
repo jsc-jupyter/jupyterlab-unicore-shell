@@ -100,17 +100,13 @@ export function retrieveShell(
   return eventSource;
 }
 
-export async function deleteShell(
-  system: string
-): Promise<void> {
+export async function deleteShell(system: string): Promise<void> {
   try {
     await requestAPI<any>(system, {
       method: 'DELETE'
     });
   } catch (reason) {
-    console.error(
-      `UNICORE ReverseShell: Could not delete shell.\n${reason}`
-    );
+    console.error(`UNICORE ReverseShell: Could not delete shell.\n${reason}`);
     throw new Error(`Failed to delete shell\n${reason}`);
   }
 }

@@ -87,7 +87,9 @@ export class WaitingTerminalWidget extends Widget {
         this._ready.resolve();
 
         this.update();
-        this._term.write(`Setting up your terminal session ${this._system} ...`);
+        this._term.write(
+          `Setting up your terminal session ${this._system} ...`
+        );
 
         this._waitForTerminal(this._system);
       })
