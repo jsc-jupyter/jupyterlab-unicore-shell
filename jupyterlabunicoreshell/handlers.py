@@ -64,7 +64,7 @@ class UNICOREReverseShell(Configurable):
         )
 
         def getUrl(s):
-           return f"https://unicore.fz-juelich.de/{s}/rest/core"
+            return f"https://unicore.fz-juelich.de/{s}/rest/core"
 
         allowed_systems = ["JUWELS", "JURECA", "JUPITER", "JUSUF", "DEEP"]
         ret = {}
@@ -183,27 +183,6 @@ class ReverseShellJob:
         self.status = None
         self.log = log
         self._clients: list[asyncio.Queue] = []
-
-    async def wait_for_ws(self, url: str, retries: int = 2, delay: float = 1) -> bool:
-        """
-        Try connecting to a websocket until it's available or retries are exhausted.
-        """
-        for i in range(retries):
-            self.log.info(f"Try to reach {self.system} Websocket. Try {i}")
-            try:
-                async with websockets.connect(url):
-                    # Sucess
-                    self.log.info(
-                        f"Try to reach {self.system} Websocket. Try {i}: Success"
-                    )
-                    return True
-            except Exception:
-                self.log.exception(
-                    f"Try to reach {self.system} Websocket. Try {i}: Failed"
-                )
-                await asyncio.sleep(delay)
-        self.log.info(f"Try to reach {self.system} Websocket. Give up")
-        return False
 
     def port_forward(self, credential, application_port: int, local_port: int):
         endpoint = self.uc_job.resource_url + f"/forward-port?port={application_port}"
@@ -375,32 +354,17 @@ if __name__ == "__main__":
                 await self.broadcast_status(f"Stdout: {msg}", failed=True)
                 return
         else:
-            stdout_path = self.uc_job.working_dir.stat("stdout")
-            stderr_path = self.uc_job.working_dir.stat("stderr")
-
-            stdout_size = stdout_path.properties["size"]
-            stderr_size = stderr_path.properties["size"]
-
-            await self.broadcast_status(f"  Waiting for Terminal to start ...")
-
-            self.log.info(stdout_size)
-            self.log.info(stderr_size)
-            while stdout_size == 0:
-                self.log.info(stdout_size)
-                self.log.info(stderr_size)
-                await self.broadcast_status(".", newline=False)
-                await asyncio.sleep(1)
-                stdout_size = stdout_path.properties["size"]
-                stderr_size = stderr_path.properties["size"]
-
-            await self.broadcast_status(" done", newline=False)
             await self.broadcast_status("  Setting up port forwarding ...")
 
             local_port = self.random_port()
             self.port_forward(credential, random_app_port, local_port)
             await self.broadcast_status("  done")
             await self.broadcast_status(
-                "  Connecting terminal.", ready=True, newline=False, port=local_port, host="localhost"
+                "  Connecting terminal.",
+                ready=True,
+                newline=False,
+                port=local_port,
+                host="localhost",
             )
             return True
 
