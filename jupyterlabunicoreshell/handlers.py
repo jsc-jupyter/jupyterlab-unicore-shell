@@ -64,7 +64,7 @@ class UNICOREReverseShell(Configurable):
         )
 
         def getUrl(s):
-            return f"https://zam2125.zam.kfa-juelich.de:9112/{s}/rest/core"
+           return f"https://unicore.fz-juelich.de/{s}/rest/core"
 
         allowed_systems = ["JUWELS", "JURECA", "JUPITER", "JUSUF", "DEEP"]
         ret = {}
@@ -239,7 +239,8 @@ class ReverseShellJob:
         await self.broadcast_status("  Create UNICORE credentials ...")
         credential = uc_credentials.OIDCToken(access_token, None)
         await self.broadcast_status(" done", newline=False)
-        await self.broadcast_status("  Create UNICORE client ...")
+
+        await self.broadcast_status(f"  Create UNICORE client ...")
         client = uc_client.Client(
             credential, system_config[system].get("url", "NoUrlConfigured")
         )
@@ -255,8 +256,10 @@ python3 terminal.py
 """
 
         random_app_port = self.random_port()
+
         python_code = """
 import os
+import sys
 import terminado
 import tornado.ioloop
 import tornado.web
@@ -279,14 +282,19 @@ class LaxTermSocket(terminado.TermSocket):
         self.active_clients.discard(self)
         print(f"{datetime.now()} - Client disconnected. Active: {len(self.active_clients)}", flush=True)
 
+class OneShotTermManager(terminado.UniqueTermManager):
+    def client_disconnected(self, websocket) -> None:
+        super().client_disconnected(websocket)
+        sys.exit()
+
+
 
 if __name__ == "__main__":
-    term_manager = terminado.UniqueTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
+    term_manager = OneShotTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
     app = tornado.web.Application([
         (r"/terminals/websocket/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
     ])
-    print(f"{datetime.now()} - Start listening on {app_port}", flush=True)
-    httpserver = app.listen({app_port}, "0.0.0.0")
+    httpserver = app.listen({app_port}, "localhost")
 
     loop = tornado.ioloop.IOLoop.current()
 
@@ -314,6 +322,7 @@ if __name__ == "__main__":
     checker.start()
 
     try:
+        print(f"{datetime.now()} - Start listening on {app_port}", flush=True)
         loop.start()
     finally:
         term_manager.shutdown()
@@ -332,6 +341,7 @@ if __name__ == "__main__":
 
         await self.broadcast_status("  Submit UNICORE Job ...")
         self.uc_job = client.new_job(job_description)
+        self.uc_job.cache_time = -1
 
         await self.broadcast_status(" done", newline=False)
         status = None
@@ -384,22 +394,13 @@ if __name__ == "__main__":
                 stderr_size = stderr_path.properties["size"]
 
             await self.broadcast_status(" done", newline=False)
-            await self.broadcast_status("  Connecting to terminal ...")
+            await self.broadcast_status("  Setting up port forwarding ...")
 
             local_port = self.random_port()
             self.port_forward(credential, random_app_port, local_port)
-            ws_url = f"ws://localhost:{local_port}/terminals/websocket/1"
-
-            # wait until the websocket is alive
-            ws_available = await self.wait_for_ws(ws_url)
-            if not ws_available:
-                await self.broadcast_status(
-                    f"Could not reach Remote Shell on {system}. Please try again.",
-                    failed=True,
-                )
-                return
+            await self.broadcast_status("  done")
             await self.broadcast_status(
-                " done", ready=True, newline=False, port=local_port, host="localhost"
+                "  Connecting terminal.", ready=True, newline=False, port=local_port, host="localhost"
             )
             return True
 
