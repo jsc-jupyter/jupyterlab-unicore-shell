@@ -3,8 +3,8 @@
 
 import {
   ITranslator,
-  nullTranslator,
-  TranslationBundle
+  nullTranslator
+  // TranslationBundle
 } from '@jupyterlab/translation';
 import { PromiseDelegate } from '@lumino/coreutils';
 import { Platform } from '@lumino/domutils';
@@ -54,7 +54,7 @@ export class WaitingTerminalWidget extends Widget {
   ) {
     super();
     translator = translator || nullTranslator;
-    this._trans = translator.load('jupyterlab');
+    // this._trans = translator.load('jupyterlab');
 
     this._failed = false;
     this._system = system;
@@ -82,12 +82,12 @@ export class WaitingTerminalWidget extends Widget {
         this._initializeTerm();
 
         this.id = `jp-TerminalWaiting-${Private.id++}`;
-        this.title.label = this._trans.__('Terminal');
+        // this.title.label = this._trans.__('Terminal');
         this._isReady = true;
         this._ready.resolve();
 
         this.update();
-        this._term.write(`Setting up your terminal session ${this._system}...`);
+        this._term.write(`Setting up your terminal session ${this._system} ...`);
 
         this._waitForTerminal(this._system);
       })
@@ -399,7 +399,7 @@ export class WaitingTerminalWidget extends Widget {
   private _shellTermReady = new PromiseDelegate<void>();
   private _term!: Xterm;
   private _termOpened = false;
-  private _trans: TranslationBundle;
+  // private _trans: TranslationBundle;
 }
 
 /**

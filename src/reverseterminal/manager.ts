@@ -16,10 +16,6 @@ export class CustomTerminalManager extends TerminalManager {
 
     super({ serverSettings });
   }
-
-  dispose(): void {
-    super.dispose();
-  }
 }
 
 import { ITranslator } from '@jupyterlab/translation';
@@ -33,5 +29,11 @@ export class CustomTerminal extends Terminal {
   ) {
     super(session, options, translator);
     this.id = id;
+  }
+
+  protected onCloseRequest(msg: any): void {
+    // In this case, closing should be same as dispose
+    super.onCloseRequest(msg);
+    this.dispose();
   }
 }

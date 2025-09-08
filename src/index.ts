@@ -17,7 +17,7 @@ import {
 } from './reverseterminal';
 import { CustomTerminal } from './reverseterminal';
 import { ITranslator } from '@jupyterlab/translation';
-import { listSystems } from './handler';
+import { listSystems, deleteShell } from './handler';
 
 /**
  * Initialization data for the jupyterlabunicoreterminal extension.
@@ -110,8 +110,8 @@ async function activate(
         waitTerminal = new WaitingTerminalWidget(system, options, translator);
         waitTerminal.id = 'waiting-terminal';
         waitTerminal.title.icon = terminalIcon;
-        waitTerminal.title.label = `Waiting (${system})...`;
-        waitTerminal.title.closable = true;
+        waitTerminal.title.label = `Starting Terminal on ${system} ...`;
+        waitTerminal.title.closable = false;
         app.shell.add(waitTerminal, 'main');
         await waitTerminal.shellTermReady;
 
@@ -120,24 +120,33 @@ async function activate(
           const host = waitTerminal._host;
 
           const manager = new CustomTerminalManager(host, local_port);
-          const session = await manager.startNew();
+          const session_id = `${system}`;
+          const session = await manager.startNew({ name: session_id} );
           shellTerminal = new CustomTerminal(
-            `reverse-shell-terminal-${system}`,
+            session_id,
             session,
             options,
             translator
           );
 
+          shellTerminal.disposed.connect(() => {
+            shellTerminal.node.dataset.myCustomId = undefined;
+            deleteShell(system).catch((err: any) => {
+              console.log('Failed to remove job:', err);
+            });
+          });
+
           shellTerminal.node.dataset.myCustomId = `${system.toLowerCase()}-terminal-001`;
-          shellTerminal.title.label = system;
           shellTerminal.title.closable = true;
           shellTerminal.title.icon = terminalIcon;
 
           await shellTerminal.ready;
 
-          app.shell.add(shellTerminal);
+          app.shell.add(shellTerminal, 'main', { mode: 'tab-after' });
           app.shell.activateById(shellTerminal.id);
           waitTerminal.close();
+        } else {
+          waitTerminal.title.closable = true;
         }
       }
     });

@@ -458,6 +458,21 @@ class ReverseShellAPIHandler(APIHandler):
             shells[system].unregister_client(queue)
             self.finish()
 
+    async def delete(self, system):
+        if system not in shells.keys():
+            self.set_status(404)
+            return
+
+        shell = shells[system]
+        try:
+            shell.uc_job.abort()
+        except:
+            self.log.exception("Could not stop UNICORE Job")
+        finally:
+            del shells[system]
+        self.log.info(f"Stop {system} terminal UNICORE job")
+        self.set_status(204)
+
 
 class ReverseShellInitAPIHandler(APIHandler):
     async def get(self):
