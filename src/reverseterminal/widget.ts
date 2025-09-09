@@ -1,10 +1,11 @@
 // Copyright (c) Jupyter Development Team.
 // Distributed under the terms of the Modified BSD License.
 
+import { Terminal as TerminalNS } from '@jupyterlab/services';
 import {
   ITranslator,
-  nullTranslator
-  // TranslationBundle
+  nullTranslator,
+  TranslationBundle
 } from '@jupyterlab/translation';
 import { PromiseDelegate } from '@lumino/coreutils';
 import { Platform } from '@lumino/domutils';
@@ -22,6 +23,7 @@ import type { WebglAddon } from '@xterm/addon-webgl';
 import { ITerminal } from '@jupyterlab/terminal';
 
 import { retrieveShell, IShellStatusEvent } from '../handler';
+import { CustomTerminalManager } from './manager';
 
 /**
  * The class name added to a terminal widget.
@@ -36,7 +38,7 @@ const TERMINAL_BODY_CLASS = 'jp-Terminal-body';
 /**
  * A widget which manages a terminal session.
  */
-export class WaitingTerminalWidget extends Widget {
+export class LazyTerminal extends Widget implements ITerminal.ITerminal {
   /**
    * Construct a new terminal widget.
    *
@@ -54,7 +56,7 @@ export class WaitingTerminalWidget extends Widget {
   ) {
     super();
     translator = translator || nullTranslator;
-    // this._trans = translator.load('jupyterlab');
+    this._trans = translator.load('jupyterlab');
 
     this._failed = false;
     this._system = system;
@@ -81,9 +83,10 @@ export class WaitingTerminalWidget extends Widget {
         this._fitAddon = fitAddon;
         this._initializeTerm();
 
-        this.id = `jp-TerminalWaiting-${Private.id++}`;
-        // this.title.label = this._trans.__('Terminal');
+        this.id = `jp-Terminal-${Private.id++}`;
+        this.title.label = this._trans.__(`Starting Terminal on ${system} ...`);
         this._isReady = true;
+        this.title.closable = true;
         this._ready.resolve();
 
         this.update();
@@ -97,6 +100,27 @@ export class WaitingTerminalWidget extends Widget {
         console.error('Failed to create a terminal.\n', reason);
         this._ready.reject(reason);
       });
+  }
+
+  protected onCloseRequest(msg: any): void {
+    // In this case, closing should be same as dispose
+    super.onCloseRequest(msg);
+    this.dispose();
+  }
+
+  public async createLateSession() {
+    const manager = new CustomTerminalManager(this._host, this._port);
+    const session_id = `${this._system}`;
+    this.session = await manager.startNew({ name: session_id });
+    this.session?.messageReceived.connect(this._onMessage, this);
+    if (this.session?.connectionStatus === 'connected') {
+      this._initialConnection();
+    } else {
+      this.session?.connectionStatusChanged.connect(
+        this._initialConnection,
+        this
+      );
+    }
   }
 
   private printStatus(data: IShellStatusEvent) {
@@ -120,7 +144,7 @@ export class WaitingTerminalWidget extends Widget {
     }
   }
 
-  private async _waitForTerminal(system: string) {
+  private _waitForTerminal(system: string) {
     retrieveShell(system, data => this.printStatus(data));
   }
 
@@ -198,6 +222,13 @@ export class WaitingTerminalWidget extends Widget {
    * Dispose of the resources held by the terminal widget.
    */
   dispose(): void {
+    if (!this.session?.isDisposed) {
+      if (this.getOption('shutdownOnClose')) {
+        this.session?.shutdown().catch(reason => {
+          console.error(`Terminal not shut down: ${reason}`);
+        });
+      }
+    }
     void this.ready.then(() => {
       this._term.dispose();
     });
@@ -212,6 +243,7 @@ export class WaitingTerminalWidget extends Widget {
    */
   async refresh(): Promise<void> {
     if (!this.isDisposed && this._isReady) {
+      await this.session?.reconnect();
       this._term.clear();
     }
   }
@@ -323,6 +355,35 @@ export class WaitingTerminalWidget extends Widget {
     this._term?.focus();
   }
 
+  private _initialConnection() {
+    if (this.isDisposed) {
+      return;
+    }
+
+    if (this.session?.connectionStatus !== 'connected') {
+      return;
+    }
+
+    this._term.write(' done');
+    this._term.writeln('');
+    this._term.writeln(`--- You are now connected to ${this._system} ---`);
+
+    this.title.label = this._trans.__('Terminal %1', this._system);
+    this._setSessionSize();
+    if (this._options.initialCommand) {
+      this.session?.send({
+        type: 'stdin',
+        content: [this._options.initialCommand + '\r']
+      });
+    }
+
+    // Only run this initial connection logic once.
+    this.session?.connectionStatusChanged.disconnect(
+      this._initialConnection,
+      this
+    );
+  }
+
   /**
    * Initialize the terminal object.
    */
@@ -332,6 +393,10 @@ export class WaitingTerminalWidget extends Widget {
       if (this.isDisposed) {
         return;
       }
+      this.session?.send({
+        type: 'stdin',
+        content: [data]
+      });
     });
 
     term.onTitleChange((title: string) => {
@@ -361,6 +426,27 @@ export class WaitingTerminalWidget extends Widget {
   }
 
   /**
+   * Handle a message from the terminal session.
+   */
+  private _onMessage(
+    sender: TerminalNS.ITerminalConnection,
+    msg: TerminalNS.IMessage
+  ): void {
+    switch (msg.type) {
+      case 'stdout':
+        if (msg.content) {
+          this._term.write(msg.content[0] as string);
+        }
+        break;
+      case 'disconnect':
+        this._term.write('\r\n\r\n[Finished… Term Session]\r\n');
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
    * Resize the terminal based on computed geometry.
    */
   private _resizeTerminal() {
@@ -373,7 +459,23 @@ export class WaitingTerminalWidget extends Widget {
     if (this._offsetHeight === -1) {
       this._offsetHeight = this.node.offsetHeight;
     }
+    this._setSessionSize();
     this._needsResize = false;
+  }
+
+  /**
+   * Set the size of the terminal in the session.
+   */
+  private _setSessionSize(): void {
+    const content = [
+      this._term.rows,
+      this._term.cols,
+      this._offsetHeight,
+      this._offsetWidth
+    ];
+    if (!this.isDisposed) {
+      this.session?.send({ type: 'set_size', content });
+    }
   }
 
   private _setThemeAttribute(theme: string | null | undefined) {
@@ -388,8 +490,8 @@ export class WaitingTerminalWidget extends Widget {
   }
 
   private _fitAddon!: FitAddon;
-  public _port: string;
-  public _host: string;
+  private _port: string;
+  private _host: string;
   public _failed: boolean;
   private _system: string;
   private _needsResize = true;
@@ -401,7 +503,8 @@ export class WaitingTerminalWidget extends Widget {
   private _shellTermReady = new PromiseDelegate<void>();
   private _term!: Xterm;
   private _termOpened = false;
-  // private _trans: TranslationBundle;
+  public session!: TerminalNS.ITerminalConnection;
+  private _trans: TranslationBundle;
 }
 
 /**

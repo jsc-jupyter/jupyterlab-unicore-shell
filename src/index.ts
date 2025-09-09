@@ -11,13 +11,9 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 import { ITerminal } from '@jupyterlab/terminal';
 
-import {
-  CustomTerminalManager,
-  WaitingTerminalWidget
-} from './reverseterminal';
-import { CustomTerminal } from './reverseterminal';
 import { ITranslator } from '@jupyterlab/translation';
 import { listSystems, deleteShell } from './handler';
+import { LazyTerminal } from './reverseterminal';
 
 /**
  * Initialization data for the jupyterlabunicoreterminal extension.
@@ -44,8 +40,7 @@ async function activate(
 ): Promise<void> {
   console.log('JupyterLab extension jupyterlabunicoreterminal is activated!');
   const { commands } = app;
-  let waitTerminal: WaitingTerminalWidget;
-  let shellTerminal: CustomTerminal;
+  let remoteTerminal: LazyTerminal;
 
   const options: Partial<ITerminal.IOptions> = {};
 
@@ -73,16 +68,10 @@ async function activate(
     });
 
   function updateTerminals(): void {
-    if (waitTerminal) {
+    if (remoteTerminal) {
       Object.keys(options).forEach(key => {
         const typedKey = key as keyof ITerminal.IOptions;
-        waitTerminal.setOption(typedKey, options[typedKey]);
-      });
-    }
-    if (shellTerminal) {
-      Object.keys(options).forEach(key => {
-        const typedKey = key as keyof ITerminal.IOptions;
-        shellTerminal.setOption(typedKey, options[typedKey]);
+        remoteTerminal.setOption(typedKey, options[typedKey]);
       });
     }
   }
@@ -107,46 +96,19 @@ async function activate(
           }
         }
 
-        waitTerminal = new WaitingTerminalWidget(system, options, translator);
-        waitTerminal.id = 'waiting-terminal';
-        waitTerminal.title.icon = terminalIcon;
-        waitTerminal.title.label = `Starting Terminal on ${system} ...`;
-        waitTerminal.title.closable = false;
-        app.shell.add(waitTerminal, 'main');
-        await waitTerminal.shellTermReady;
-
-        if (!waitTerminal._failed) {
-          const local_port = waitTerminal._port;
-          const host = waitTerminal._host;
-
-          const manager = new CustomTerminalManager(host, local_port);
-          const session_id = `${system}`;
-          const session = await manager.startNew({ name: session_id });
-          shellTerminal = new CustomTerminal(
-            session_id,
-            session,
-            options,
-            translator
-          );
-
-          shellTerminal.disposed.connect(() => {
-            shellTerminal.node.dataset.myCustomId = undefined;
-            deleteShell(system).catch((err: any) => {
-              console.log('Failed to remove job:', err);
-            });
+        remoteTerminal = new LazyTerminal(system, options, translator);
+        remoteTerminal.id = 'waiting-terminal';
+        remoteTerminal.title.icon = terminalIcon;
+        remoteTerminal.disposed.connect(() => {
+          remoteTerminal.node.dataset.myCustomId = undefined;
+          deleteShell(system).catch((err: any) => {
+            console.log('Failed to remove job:', err);
           });
-
-          shellTerminal.node.dataset.myCustomId = `${system.toLowerCase()}-terminal-001`;
-          shellTerminal.title.closable = true;
-          shellTerminal.title.icon = terminalIcon;
-
-          await shellTerminal.ready;
-
-          app.shell.add(shellTerminal, 'main', { mode: 'tab-after' });
-          app.shell.activateById(shellTerminal.id);
-          waitTerminal.close();
-        } else {
-          waitTerminal.title.closable = true;
+        });
+        app.shell.add(remoteTerminal, 'main');
+        await remoteTerminal.shellTermReady;
+        if (!remoteTerminal._failed) {
+          await remoteTerminal.createLateSession();
         }
       }
     });

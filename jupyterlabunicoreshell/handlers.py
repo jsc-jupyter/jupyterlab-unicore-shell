@@ -121,6 +121,13 @@ class UNICOREReverseShell(Configurable):
                 _access_token = await _access_token
         return _access_token
 
+    unicore_forward_debug = Bool(
+        os.environ.get("JUPYTERLAB_UNICORE_FORWARD_DEBUG", "false").lower()
+        in ["1", "true"],
+        config=True,
+        help=("Enable debug output in unicore port forwarding"),
+    )
+
 
 shells = {}
 
@@ -189,7 +196,7 @@ class ReverseShellJob:
         self.uc_forward = uc_forwarding.Forwarder(
             uc_client.Transport(credential), endpoint
         )
-        self.uc_forward.quiet = False
+        self.uc_forward.quiet = not self.config.unicore_forward_debug
         self.uc_forward_thread = threading.Thread(
             target=self.uc_forward.run, kwargs={"local_port": local_port}, daemon=True
         )
@@ -358,11 +365,11 @@ if __name__ == "__main__":
 
             local_port = self.random_port()
             self.port_forward(credential, random_app_port, local_port)
-            await self.broadcast_status("  done")
+            await self.broadcast_status("  done", newline=False)
             await self.broadcast_status(
-                "  Connecting terminal.",
+                "  Connecting terminal ...",
                 ready=True,
-                newline=False,
+                newline=True,
                 port=local_port,
                 host="localhost",
             )
