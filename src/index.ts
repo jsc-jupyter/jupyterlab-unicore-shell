@@ -91,21 +91,32 @@ async function activate(
             widget.node.dataset.myCustomId ===
             `${system.toLowerCase()}-terminal-001`
           ) {
+            const current = app.shell.currentWidget;
+            if (current && current.id.startsWith('launcher')) {
+              current.close();
+            }
             app.shell.activateById(widget.id);
             return;
           }
         }
 
         remoteTerminal = new LazyTerminal(system, options, translator);
-        remoteTerminal.id = 'waiting-terminal';
         remoteTerminal.title.icon = terminalIcon;
+        remoteTerminal.id = `${system.toLowerCase()}-terminal-001`;
+        remoteTerminal.node.dataset.myCustomId = `${system.toLowerCase()}-terminal-001`;
         remoteTerminal.disposed.connect(() => {
           remoteTerminal.node.dataset.myCustomId = undefined;
           deleteShell(system).catch((err: any) => {
             console.log('Failed to remove job:', err);
           });
         });
+
+        const current = app.shell.currentWidget;
         app.shell.add(remoteTerminal, 'main');
+        if (current && current.id.startsWith('launcher')) {
+          current.close();
+        }
+
         await remoteTerminal.shellTermReady;
         if (!remoteTerminal._failed) {
           await remoteTerminal.createLateSession();

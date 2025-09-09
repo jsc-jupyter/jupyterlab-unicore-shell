@@ -91,7 +91,7 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
 
         this.update();
         this._term.write(
-          `Setting up your terminal session ${this._system} ...`
+          `Setting up your terminal session on ${this._system} ...`
         );
 
         this._waitForTerminal(this._system);

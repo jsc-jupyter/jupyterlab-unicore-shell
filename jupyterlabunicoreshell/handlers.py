@@ -127,6 +127,123 @@ class UNICOREReverseShell(Configurable):
         help=("Enable debug output in unicore port forwarding"),
     )
 
+    def default_unicore_shell_code(self):
+        return """
+module purge --force
+module load Stages/2025
+module load GCCcore/.13.3.0
+module load jupyter-server
+python3 terminal.py
+"""
+
+    unicore_shell_code = Any(
+        default_value=default_unicore_shell_code,
+        config=True,
+        help="""
+        Bash code executed on remote system.
+        Must call `python terminal.py` in the end to start terminal.
+        """,
+    )
+
+    async def get_unicore_shell_code(self):
+        _unicore_shell_code = self.unicore_shell_code
+        if callable(_unicore_shell_code):
+            _unicore_shell_code = _unicore_shell_code(self)
+            if inspect.isawaitable(_unicore_shell_code):
+                _unicore_shell_code = await _unicore_shell_code
+        return _unicore_shell_code
+
+    def default_unicore_python_code(self, app_port):
+        return """
+import os
+import sys
+import terminado
+import tornado.ioloop
+import tornado.web
+
+from datetime import datetime
+
+class LaxTermSocket(terminado.TermSocket):
+    active_clients = set()
+
+    def check_origin(self, origin):
+        return True
+
+    def open(self, *args, **kwargs):
+        super().open(*args, **kwargs)
+        self.active_clients.add(self)
+        print(f"{datetime.now()} - Client connected. Active: {len(self.active_clients)}", flush=True)
+
+    def on_close(self):
+        super().on_close()
+        self.active_clients.discard(self)
+        print(f"{datetime.now()} - Client disconnected. Active: {len(self.active_clients)}", flush=True)
+
+class OneShotTermManager(terminado.UniqueTermManager):
+    def client_disconnected(self, websocket) -> None:
+        super().client_disconnected(websocket)
+        sys.exit()
+
+
+
+if __name__ == "__main__":
+    term_manager = OneShotTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
+    app = tornado.web.Application([
+        (r"/terminals/websocket/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
+    ])
+    httpserver = app.listen({app_port}, "localhost")
+
+    loop = tornado.ioloop.IOLoop.current()
+
+    # Check every 10 seconds if no clients are connected
+    def check_inactive():
+        if not LaxTermSocket.active_clients:
+            print(f"{datetime.now()} - No clients connected. Scheduling shutdown after 60s...", flush=True)
+            loop.call_later(60, shutdown_if_still_inactive)
+
+    def shutdown_if_still_inactive():
+        if not LaxTermSocket.active_clients:
+            print(f"{datetime.now()} - No clients connected for 60s. Shutting down.", flush=True)
+            term_manager.shutdown()
+            loop.stop()
+        else:
+            print(f"{datetime.now()} - A client connected again. Canceling shutdown.", flush=True)
+
+    def shutdown():
+        print(f"{datetime.now()} - Shutting down server...", flush=True)
+        term_manager.shutdown()
+        loop.stop()
+
+    # Periodic check
+    checker = tornado.ioloop.PeriodicCallback(check_inactive, 10000)
+    checker.start()
+
+    try:
+        print(f"{datetime.now()} - Start listening on {app_port}", flush=True)
+        loop.start()
+    finally:
+        term_manager.shutdown()
+""".replace(
+            "{app_port}", f"{app_port}"
+        )
+
+    unicore_python_code = Any(
+        default_value=default_unicore_python_code,
+        config=True,
+        help="""
+        Bash code executed on remote system.
+        Must call `python terminal.py` in the end to start terminal.
+        """,
+    )
+
+    async def get_unicore_python_code(self, app_port):
+        _unicore_python_code = self.unicore_python_code
+        if callable(_unicore_python_code):
+            _unicore_python_code = _unicore_python_code(self, app_port)
+            if inspect.isawaitable(_unicore_python_code):
+                _unicore_python_code = await _unicore_python_code
+        return _unicore_python_code
+
 
 shells = {}
 
@@ -202,20 +319,33 @@ class ReverseShellJob:
         self.uc_forward_thread.start()
 
     async def run(self, system):
+        try:
+            await self._run(system)
+        except Exception as e:
+            self.log.exception(f"Terminal start on {system} failed.")
+            await self.broadcast_status(
+                f"Terminal start failed: {str(e)}",
+                failed=True,
+            )
+            await self.broadcast_status(
+                "You can close this terminal and try again. Check JupyterLab logs for more information."
+            )
+            if self.uc_job:
+                try:
+                    self.uc_job.abort()
+                except:
+                    self.log.exception(f"Could not abort UNICORE job for {system}")
+                self.uc_job = None
+
+    async def _run(self, system):
         access_token = await self.config.get_access_token()
         if not access_token:
-            await self.broadcast_status(
-                "No access token available. Check configuration or env variable ACCESS_TOKEN",
-                failed=True,
+            raise Exception(
+                "No access token available. Check configuration or env variable ACCESS_TOKEN"
             )
-            return
         system_config = await self.config.get_system_config()
         if system not in system_config.keys():
-            await self.broadcast_status(
-                f"System {system} not configured in {system_config.keys()}",
-                failed=True,
-            )
-            return
+            raise Exception(f"System {system} not configured in {system_config.keys()}")
 
         await self.broadcast_status(
             f"Create UNICORE Job to start terminal on {system}:"
@@ -232,88 +362,11 @@ class ReverseShellJob:
 
         await self.broadcast_status(" done", newline=False)
 
-        shell_code = """
-module purge --force
-module load Stages/2025
-module load GCCcore/.13.3.0
-module load jupyter-server
-python3 terminal.py
-"""
+        shell_code = await self.config.get_unicore_shell_code()
 
         random_app_port = self.random_port()
 
-        python_code = """
-import os
-import sys
-import terminado
-import tornado.ioloop
-import tornado.web
-
-from datetime import datetime
-
-class LaxTermSocket(terminado.TermSocket):
-    active_clients = set()
-
-    def check_origin(self, origin):
-        return True
-
-    def open(self, *args, **kwargs):
-        super().open(*args, **kwargs)
-        self.active_clients.add(self)
-        print(f"{datetime.now()} - Client connected. Active: {len(self.active_clients)}", flush=True)
-
-    def on_close(self):
-        super().on_close()
-        self.active_clients.discard(self)
-        print(f"{datetime.now()} - Client disconnected. Active: {len(self.active_clients)}", flush=True)
-
-class OneShotTermManager(terminado.UniqueTermManager):
-    def client_disconnected(self, websocket) -> None:
-        super().client_disconnected(websocket)
-        sys.exit()
-
-
-
-if __name__ == "__main__":
-    term_manager = OneShotTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
-    app = tornado.web.Application([
-        (r"/terminals/websocket/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
-    ])
-    httpserver = app.listen({app_port}, "localhost")
-
-    loop = tornado.ioloop.IOLoop.current()
-
-    # Check every 10 seconds if no clients are connected
-    def check_inactive():
-        if not LaxTermSocket.active_clients:
-            print(f"{datetime.now()} - No clients connected. Scheduling shutdown after 60s...", flush=True)
-            loop.call_later(60, shutdown_if_still_inactive)
-
-    def shutdown_if_still_inactive():
-        if not LaxTermSocket.active_clients:
-            print(f"{datetime.now()} - No clients connected for 60s. Shutting down.", flush=True)
-            term_manager.shutdown()
-            loop.stop()
-        else:
-            print(f"{datetime.now()} - A client connected again. Canceling shutdown.", flush=True)
-
-    def shutdown():
-        print(f"{datetime.now()} - Shutting down server...", flush=True)
-        term_manager.shutdown()
-        loop.stop()
-
-    # Periodic check
-    checker = tornado.ioloop.PeriodicCallback(check_inactive, 10000)
-    checker.start()
-
-    try:
-        print(f"{datetime.now()} - Start listening on {app_port}", flush=True)
-        loop.start()
-    finally:
-        term_manager.shutdown()
-""".replace(
-            "{app_port}", f"{random_app_port}"
-        )
+        python_code = await self.config.get_unicore_python_code(random_app_port)
 
         job_description = {
             "Job type": "ON_LOGIN_NODE",
@@ -345,21 +398,24 @@ if __name__ == "__main__":
             status = self.uc_job.status
             await asyncio.sleep(1)
 
-        if self.uc_job.status in ["FAILED", "SUCCESSFUL", "DONE"]:
+        if self.uc_job.status in [
+            uc_client.JobStatus.FAILED,
+            uc_client.JobStatus.SUCCESSFUL,
+            uc_client.JobStatus.UNDEFINED,
+        ]:
             file_path = self.uc_job.working_dir.stat("stderr")
             file_size = file_path.properties["size"]
             await self.broadcast_status(f"Terminal could not be started.")
             if file_size == 0:
                 uc_logs = "\n".join(self.uc_job.properties.get("log", []))
-                await self.broadcast_status(f"Unicore Logs: {uc_logs}", failed=True)
-                return
+                self.log.error(f"UNICORE Logs: {uc_logs}")
             else:
                 offset = max(0, file_size - 4096)
                 s = file_path.raw(offset=offset)
                 msg = s.data.decode()
-                await self.broadcast_status(f"Stdout: {msg}", failed=True)
-                return
-        else:
+                self.log.error(f"UNICORE Stdout: {msg}")
+            raise Exception(f"UNICORE job unexpected status {self.uc_job.status}.")
+        elif self.uc_job.status == uc_client.JobStatus.RUNNING:
             await self.broadcast_status("  Setting up port forwarding ...")
 
             local_port = self.random_port()
@@ -372,7 +428,8 @@ if __name__ == "__main__":
                 port=local_port,
                 host="localhost",
             )
-            return True
+        else:
+            raise Exception(f"Unexpected UNICORE Job Status: {self.uc_job.status}")
 
 
 class ReverseShellAPIHandler(APIHandler):
@@ -471,9 +528,10 @@ class ReverseShellAPIHandler(APIHandler):
 
         shell = shells[system]
         try:
-            shell.uc_job.abort()
+            if shell.uc_job:
+                shell.uc_job.abort()
         except:
-            self.log.exception("Could not stop UNICORE Job")
+            self.log.exception(f"Could not stop UNICORE Job for {system}")
         finally:
             del shells[system]
         self.log.info(f"Stop {system} terminal UNICORE job")
