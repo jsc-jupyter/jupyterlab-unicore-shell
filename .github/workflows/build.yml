@@ -36,10 +36,10 @@ jobs:
         python -m pip install .[test]
 
         jupyter server extension list
-        jupyter server extension list 2>&1 | grep -ie "jupyterlabunicoreshell.*OK"
+        jupyter server extension list 2>&1 | grep -ie "jupyterlab_unicore_shell.*OK"
 
         jupyter labextension list
-        jupyter labextension list 2>&1 | grep -ie "jupyterlabunicoreshell.*OK"
+        jupyter labextension list 2>&1 | grep -ie "jupyterlab-unicore-shell.*OK"
         python -m jupyterlab.browser_check
 
     - name: Package the extension
@@ -48,13 +48,13 @@ jobs:
 
         pip install build
         python -m build
-        pip uninstall -y "jupyterlabunicoreshell" jupyterlab
+        pip uninstall -y "jupyterlab_unicore_shell" jupyterlab
 
     - name: Upload extension packages
       uses: actions/upload-artifact@v4
       with:
         name: extension-artifacts
-        path: dist/jupyterlabunicoreshell*
+        path: dist/jupyterlab_unicore_shell*
         if-no-files-found: error
 
   test_isolated:
@@ -77,14 +77,14 @@ jobs:
         sudo rm -rf $(which node)
         sudo rm -rf $(which node)
 
-        pip install "jupyterlab>=4.0.0,<5" jupyterlabunicoreshell*.whl
+        pip install "jupyterlab>=4.0.0,<5" jupyterlab_unicore_shell*.whl
 
 
         jupyter server extension list
-        jupyter server extension list 2>&1 | grep -ie "jupyterlabunicoreshell.*OK"
+        jupyter server extension list 2>&1 | grep -ie "jupyterlab_unicore_shell.*OK"
 
         jupyter labextension list
-        jupyter labextension list 2>&1 | grep -ie "jupyterlabunicoreshell.*OK"
+        jupyter labextension list 2>&1 | grep -ie "jupyterlab-unicore-shell.*OK"
         python -m jupyterlab.browser_check --no-browser-test
 
 

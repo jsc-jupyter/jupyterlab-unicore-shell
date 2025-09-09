@@ -7,9 +7,9 @@ node_modules/
 *.egg-info/
 .ipynb_checkpoints
 *.tsbuildinfo
-jupyterlabunicoreshell/labextension
+jupyterlab_unicore_shell/labextension
 # Version file is handled by hatchling
-jupyterlabunicoreshell/_version.py
+jupyterlab_unicore_shell/_version.py
 
 # Created by https://www.gitignore.io/api/python
 # Edit at https://www.gitignore.io/?templates=python

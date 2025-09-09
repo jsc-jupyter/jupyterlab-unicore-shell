@@ -6,17 +6,17 @@ except ImportError:
     # the package from a stable release or in editable mode: https://pip.pypa.io/en/stable/topics/local-project-installs/#editable-installs
     import warnings
 
-    warnings.warn("Importing 'jupyterlabunicoreshell' outside a proper installation.")
+    warnings.warn("Importing 'jupyterlab_unicore_shell' outside a proper installation.")
     __version__ = "dev"
 from .handlers import setup_handlers
 
 
 def _jupyter_labextension_paths():
-    return [{"src": "labextension", "dest": "jupyterlabunicoreshell"}]
+    return [{"src": "labextension", "dest": "jupyterlab-unicore-shell"}]
 
 
 def _jupyter_server_extension_points():
-    return [{"module": "jupyterlabunicoreshell"}]
+    return [{"module": "jupyterlab_unicore_shell"}]
 
 
 def _load_jupyter_server_extension(server_app):
@@ -28,5 +28,5 @@ def _load_jupyter_server_extension(server_app):
         JupyterLab application instance
     """
     setup_handlers(server_app.web_app)
-    name = "jupyterlabunicoreshell"
+    name = "jupyterlab_unicore_shell"
     server_app.log.info(f"Registered {name} server extension")

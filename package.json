@@ -1,7 +1,7 @@
 {
-    "name": "jupyterlabunicoreshell",
+    "name": "jupyterlab-unicore-shell",
     "version": "0.1.2",
-    "description": "A JupyterLab extension to use reverse shells via UNICORE.",
+    "description": "A JupyterLab extension to run Remote Terminals via UNICORE.",
     "keywords": [
         "jupyter",
         "jupyterlab",
@@ -44,7 +44,7 @@
         "clean": "jlpm clean:lib",
         "clean:lib": "rimraf lib tsconfig.tsbuildinfo",
         "clean:lintcache": "rimraf .eslintcache .stylelintcache",
-        "clean:labextension": "rimraf jupyterlabunicoreshell/labextension jupyterlabunicoreshell/_version.py",
+        "clean:labextension": "rimraf jupyterlab_unicore_shell/labextension jupyterlab_unicore_shell/_version.py",
         "clean:all": "jlpm clean:lib && jlpm clean:labextension && jlpm clean:lintcache",
         "eslint": "jlpm eslint:check --fix",
         "eslint:check": "eslint . --cache --ext .ts,.tsx",
@@ -110,12 +110,12 @@
                     "pip"
                 ],
                 "base": {
-                    "name": "jupyterlabunicoreshell"
+                    "name": "jupyterlab_unicore_shell"
                 }
             }
         },
         "extension": true,
-        "outputDir": "jupyterlabunicoreshell/labextension"
+        "outputDir": "jupyterlab_unicore_shell/labextension"
     },
     "eslintIgnore": [
         "node_modules",
