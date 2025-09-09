@@ -2,8 +2,8 @@ import asyncio
 import inspect
 import json
 import os
-import socket
 import threading
+from time import sleep
 
 import pyunicore.client as uc_client
 import pyunicore.credentials as uc_credentials
@@ -153,11 +153,13 @@ python3 terminal.py
                 _unicore_shell_code = await _unicore_shell_code
         return _unicore_shell_code
 
-    def default_unicore_python_code(self, app_port):
+    def default_unicore_python_code(self):
         return """
 import os
+import socket
 import sys
 import terminado
+import tornado.httpserver
 import tornado.ioloop
 import tornado.web
 
@@ -191,7 +193,13 @@ if __name__ == "__main__":
     app = tornado.web.Application([
         (r"/terminals/websocket/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
     ])
-    httpserver = app.listen({app_port}, "localhost")
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.bind("sock")
+    sock.listen(2)
+    sock.setblocking(False)
+    httpserver = tornado.httpserver.HTTPServer(app)
+    httpserver.add_socket(sock)
 
     loop = tornado.ioloop.IOLoop.current()
 
@@ -219,13 +227,11 @@ if __name__ == "__main__":
     checker.start()
 
     try:
-        print(f"{datetime.now()} - Start listening on {app_port}", flush=True)
+        print(f"{datetime.now()} - Start listening.", flush=True)
         loop.start()
     finally:
         term_manager.shutdown()
-""".replace(
-            "{app_port}", f"{app_port}"
-        )
+"""
 
     unicore_python_code = Any(
         default_value=default_unicore_python_code,
@@ -236,10 +242,10 @@ if __name__ == "__main__":
         """,
     )
 
-    async def get_unicore_python_code(self, app_port):
+    async def get_unicore_python_code(self):
         _unicore_python_code = self.unicore_python_code
         if callable(_unicore_python_code):
-            _unicore_python_code = _unicore_python_code(self, app_port)
+            _unicore_python_code = _unicore_python_code(self)
             if inspect.isawaitable(_unicore_python_code):
                 _unicore_python_code = await _unicore_python_code
         return _unicore_python_code
@@ -292,14 +298,6 @@ class ReverseShellJob:
         for q in self._clients:
             await q.put(status)
 
-    def random_port(self):
-        """Get a single random port."""
-        sock = socket.socket()
-        sock.bind(("", 0))
-        port = sock.getsockname()[1]
-        sock.close()
-        return port
-
     def __init__(self, config: UNICOREReverseShell, system: str, log):
         self.config = config
         self.system = system
@@ -307,16 +305,20 @@ class ReverseShellJob:
         self.log = log
         self._clients: list[asyncio.Queue] = []
 
-    def port_forward(self, credential, application_port: int, local_port: int):
-        endpoint = self.uc_job.resource_url + f"/forward-port?port={application_port}"
+    def port_forward(self, credential) -> int:
+        endpoint = self.uc_job.resource_url + "/forward-port?file=sock"
         self.uc_forward = uc_forwarding.Forwarder(
             uc_client.Transport(credential), endpoint
         )
         self.uc_forward.quiet = not self.config.unicore_forward_debug
         self.uc_forward_thread = threading.Thread(
-            target=self.uc_forward.run, kwargs={"local_port": local_port}, daemon=True
+            target=self.uc_forward.run, kwargs={"local_port": 0}, daemon=True
         )
         self.uc_forward_thread.start()
+        while self.uc_forward.local_port == 0:
+            sleep(1)
+        return self.uc_forward.local_port
+
 
     async def run(self, system):
         try:
@@ -364,9 +366,7 @@ class ReverseShellJob:
 
         shell_code = await self.config.get_unicore_shell_code()
 
-        random_app_port = self.random_port()
-
-        python_code = await self.config.get_unicore_python_code(random_app_port)
+        python_code = await self.config.get_unicore_python_code()
 
         job_description = {
             "Job type": "ON_LOGIN_NODE",
@@ -417,10 +417,9 @@ class ReverseShellJob:
             raise Exception(f"UNICORE job unexpected status {self.uc_job.status}.")
         elif self.uc_job.status == uc_client.JobStatus.RUNNING:
             await self.broadcast_status("  Setting up port forwarding ...")
-
-            local_port = self.random_port()
-            self.port_forward(credential, random_app_port, local_port)
+            local_port = self.port_forward(credential)
             await self.broadcast_status("  done", newline=False)
+            await asyncio.sleep(5)
             await self.broadcast_status(
                 "  Connecting terminal ...",
                 ready=True,
