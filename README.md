@@ -1,6 +1,8 @@
 # jupyterlab_unicore_shell
 
 [![Github Actions Status](https://github.com/jsc-jupyter/jupyterlab-unicore-shell/workflows/Build/badge.svg)](https://github.com/jsc-jupyter/jupyterlab-unicore-shell/actions/workflows/build.yml)
+[![PyPI](https://img.shields.io/badge/PyPI-passed-green)](https://pypi.org/project/jupyterlab-unicore-shell/)
+[![npm](https://img.shields.io/badge/npm-passed-green)](https://www.npmjs.com/package/jupyterlab-unicore-shell)
 
 A JupyterLab extension to run Remote Terminals via UNICORE.
 
