@@ -3,7 +3,6 @@ import inspect
 import json
 import os
 import threading
-from time import sleep
 
 import pyunicore.client as uc_client
 import pyunicore.credentials as uc_credentials
@@ -105,9 +104,33 @@ class UNICOREReverseShell(Configurable):
         String or function called to get current access token of user before sending
         request to the API.
 
-        Example:
-        def get_token():
-            return "mytoken"
+        Example::
+
+            def get_token(self):
+                return "mytoken"
+            c.UNICOREReverseShell.access_token = get_token
+        """
+        ),
+    )
+
+    async def get_ws_host(self):
+        _ws_host = self.ws_host
+        if callable(_ws_host):
+            _ws_host = _ws_host()
+            if inspect.isawaitable(_ws_host):
+                _ws_host = await _ws_host
+        return _ws_host
+
+    ws_host = Any(
+        default_value=os.environ.get("JUPYTERLAB_UNICORE_SHELL_WS_HOST", "127.0.0.1"),
+        config=True,
+        help=(
+            """
+        String or function called to get websocket host.
+
+        Example::
+        
+            c.UNICOREReverseShell.ws_host = "127.0.0.1"
         """
         ),
     )
@@ -191,7 +214,7 @@ class OneShotTermManager(terminado.UniqueTermManager):
 if __name__ == "__main__":
     term_manager = OneShotTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
     app = tornado.web.Application([
-        (r"/terminals/websocket/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
+        (r"/.*", LaxTermSocket, {"term_manager": term_manager}),
     ])
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -305,7 +328,7 @@ class ReverseShellJob:
         self.log = log
         self._clients: list[asyncio.Queue] = []
 
-    def port_forward(self, credential) -> int:
+    async def port_forward(self, credential) -> int:
         endpoint = self.uc_job.resource_url + "/forward-port?file=sock"
         self.uc_forward = uc_forwarding.Forwarder(
             uc_client.Transport(credential), endpoint
@@ -316,9 +339,8 @@ class ReverseShellJob:
         )
         self.uc_forward_thread.start()
         while self.uc_forward.local_port == 0:
-            sleep(1)
+            await asyncio.sleep(1)
         return self.uc_forward.local_port
-
 
     async def run(self, system):
         try:
@@ -417,15 +439,16 @@ class ReverseShellJob:
             raise Exception(f"UNICORE job unexpected status {self.uc_job.status}.")
         elif self.uc_job.status == uc_client.JobStatus.RUNNING:
             await self.broadcast_status("  Setting up port forwarding ...")
-            local_port = self.port_forward(credential)
-            await self.broadcast_status("  done", newline=False)
+            local_port = await self.port_forward(credential)
             await asyncio.sleep(5)
+            await self.broadcast_status("  done", newline=False)
+            host = await self.config.get_ws_host()
             await self.broadcast_status(
                 "  Connecting terminal ...",
                 ready=True,
                 newline=True,
                 port=local_port,
-                host="localhost",
+                host=host,
             )
         else:
             raise Exception(f"Unexpected UNICORE Job Status: {self.uc_job.status}")
