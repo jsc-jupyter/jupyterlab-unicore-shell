@@ -23,7 +23,7 @@ import type { WebglAddon } from '@xterm/addon-webgl';
 import { ITerminal } from '@jupyterlab/terminal';
 
 import { retrieveShell, IShellStatusEvent } from '../handler';
-import { CustomTerminalManager } from './manager';
+import { RemoteTerminalManager } from './manager';
 
 /**
  * The class name added to a terminal widget.
@@ -60,8 +60,6 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
 
     this._failed = false;
     this._system = system;
-    this._port = '';
-    this._host = '';
 
     // Initialize settings.
     this._options = { ...ITerminal.defaultOptions, ...options };
@@ -109,9 +107,8 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
   }
 
   public async createLateSession() {
-    const manager = new CustomTerminalManager(this._host, this._port);
-    const session_id = `${this._system}`;
-    this.session = await manager.startNew({ name: session_id });
+    const manager = new RemoteTerminalManager();
+    this.session = await manager.startNew({ name: this._system });
     this.session?.messageReceived.connect(this._onMessage, this);
     if (this.session?.connectionStatus === 'connected') {
       this._initialConnection();
@@ -131,12 +128,6 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
       this._term.write(data.msg);
     }
     if (data.ready === true) {
-      if (data.port) {
-        this._port = data.port;
-      }
-      if (data.host) {
-        this._host = data.host;
-      }
       this._shellTermReady.resolve();
     } else if (data.failed === true) {
       this._failed = true;
@@ -490,8 +481,6 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
   }
 
   private _fitAddon!: FitAddon;
-  private _port: string;
-  private _host: string;
   public _failed: boolean;
   private _system: string;
   private _needsResize = true;

@@ -19,11 +19,10 @@ import { LazyTerminal } from './reverseterminal';
  * Initialization data for the jupyterlabunicoreterminal extension.
  */
 
-// const FACTORY = 'Editor';
 const PALETTE_CATEGORY = 'UNICORE Terminals';
 
 const plugin: JupyterFrontEndPlugin<void> = {
-  id: 'jupyterlabunicoreterminal:plugin',
+  id: 'jupyterlab-unicore-shell:plugin',
   description: 'A JupyterLab extension to add UNICORE reverse shells.',
   autoStart: true,
   requires: [ILauncher, ISettingRegistry],
@@ -38,7 +37,7 @@ async function activate(
   palette: ICommandPalette | null,
   translator: ITranslator | undefined
 ): Promise<void> {
-  console.log('JupyterLab extension jupyterlabunicoreterminal is activated!');
+  console.log('JupyterLab extension jupyterlab-unicore-shell is activated!');
   const { commands } = app;
   let remoteTerminal: LazyTerminal;
 
@@ -127,7 +126,7 @@ async function activate(
     if (launcher) {
       launcher.add({
         command,
-        category: 'UNICORE Terminals',
+        category: PALETTE_CATEGORY,
         rank: 1
       });
     }

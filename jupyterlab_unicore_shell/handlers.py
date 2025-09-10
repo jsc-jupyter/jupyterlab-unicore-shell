@@ -113,28 +113,6 @@ class UNICOREReverseShell(Configurable):
         ),
     )
 
-    async def get_ws_host(self):
-        _ws_host = self.ws_host
-        if callable(_ws_host):
-            _ws_host = _ws_host()
-            if inspect.isawaitable(_ws_host):
-                _ws_host = await _ws_host
-        return _ws_host
-
-    ws_host = Any(
-        default_value=os.environ.get("JUPYTERLAB_UNICORE_SHELL_WS_HOST", "127.0.0.1"),
-        config=True,
-        help=(
-            """
-        String or function called to get websocket host.
-
-        Example::
-        
-            c.UNICOREReverseShell.ws_host = "127.0.0.1"
-        """
-        ),
-    )
-
     async def get_access_token(self):
         _access_token = self.access_token
         if callable(_access_token):
@@ -214,7 +192,7 @@ class OneShotTermManager(terminado.UniqueTermManager):
 if __name__ == "__main__":
     term_manager = OneShotTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
     app = tornado.web.Application([
-        (r"/.*", LaxTermSocket, {"term_manager": term_manager}),
+        (r"/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
     ])
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -280,12 +258,10 @@ shells = {}
 class ReverseShellJob:
     config = None
     status = None
+    port = None
     _clients = None
 
     log = None
-    uuid = None
-    system = ""
-    port = None
 
     uc_job = None
     uc_forward = None
@@ -301,18 +277,12 @@ class ReverseShellJob:
     def unregister_client(self, q: asyncio.Queue):
         self._clients.remove(q)
 
-    async def broadcast_status(
-        self, msg, ready=False, failed=False, newline=True, host=None, port=None
-    ):
+    async def broadcast_status(self, msg, ready=False, failed=False, newline=True):
         status = {"newline": newline}
         if ready:
             status["ready"] = True
         if failed:
             status["failed"] = True
-        if port:
-            status["port"] = f"{port}"
-        if host:
-            status["host"] = host
         status["msg"] = msg
         if failed:
             self.status = None
@@ -321,9 +291,8 @@ class ReverseShellJob:
         for q in self._clients:
             await q.put(status)
 
-    def __init__(self, config: UNICOREReverseShell, system: str, log):
+    def __init__(self, config: UNICOREReverseShell, log):
         self.config = config
-        self.system = system
         self.status = None
         self.log = log
         self._clients: list[asyncio.Queue] = []
@@ -439,16 +408,13 @@ class ReverseShellJob:
             raise Exception(f"UNICORE job unexpected status {self.uc_job.status}.")
         elif self.uc_job.status == uc_client.JobStatus.RUNNING:
             await self.broadcast_status("  Setting up port forwarding ...")
-            local_port = await self.port_forward(credential)
+            self.port = await self.port_forward(credential)
             await asyncio.sleep(5)
-            await self.broadcast_status("  done", newline=False)
-            host = await self.config.get_ws_host()
+            await self.broadcast_status(" done", newline=False)
             await self.broadcast_status(
                 "  Connecting terminal ...",
                 ready=True,
                 newline=True,
-                port=local_port,
-                host=host,
             )
         else:
             raise Exception(f"Unexpected UNICORE Job Status: {self.uc_job.status}")
@@ -506,7 +472,7 @@ class ReverseShellAPIHandler(APIHandler):
         self.keepalive_task = asyncio.create_task(self.keepalive())
         if system not in shells.keys():
             shells[system] = ReverseShellJob(
-                UNICOREReverseShell(config=self.config), system, log=self.log
+                UNICOREReverseShell(config=self.config), log=self.log
             )
         status = shells[system].status
         if not status:
@@ -570,14 +536,82 @@ class ReverseShellInitAPIHandler(APIHandler):
         self.finish(json.dumps(systems, sort_keys=True))
 
 
+import json
+import tornado.websocket
+from tornado.ioloop import IOLoop
+from tornado.iostream import StreamClosedError
+from jupyter_server.base.handlers import APIHandler
+from jupyter_server.utils import url_path_join
+from jupyter_server.auth.decorator import authorized
+
+
+class RemoteTerminalRootHandler(APIHandler):
+    auth_resource = "remoteshell"
+
+    @web.authenticated
+    @authorized
+    async def post(self):
+        data = self.get_json_body() or {}
+        self.finish(json.dumps(data))
+
+    @web.authenticated
+    @authorized
+    async def get(self, name=""):
+        models = []
+        for key in shells.keys():
+            models.append({"name": key})
+        self.finish(json.dumps(models))
+
+
+class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
+    async def open(self, name):
+        if name not in shells.keys():
+            raise Exception(f"WebSocket for {name} not available.")
+        if not shells[name].port:
+            raise Exception(f"WebSocket for {name} not ready yet.")
+        port = shells[name].port
+
+        """Proxy WS to remote terminado"""
+        remote_url = f"ws://127.0.0.1:{port}/{name}"
+        self.client = tornado.websocket.websocket_connect(remote_url)
+        self.remote = await self.client
+
+        async def pump_remote():
+            try:
+                while True:
+                    msg = await self.remote.read_message()
+                    if msg is None:
+                        break
+                    await self.write_message(msg)
+            except StreamClosedError:
+                pass
+            finally:
+                self.close()
+
+        IOLoop.current().spawn_callback(pump_remote)
+
+    async def on_message(self, message):
+        await self.remote.write_message(message)
+
+    def on_close(self):
+        if self.remote:
+            self.remote.close()
+
+
 def setup_handlers(web_app):
     host_pattern = ".*$"
     base_url = web_app.settings["base_url"]
 
     route_pattern_init = url_path_join(base_url, "jupyterlabunicoreshell")
     route_pattern = url_path_join(base_url, "jupyterlabunicoreshell", r"([^/]+)")
+    remote_route_pattern = url_path_join(base_url, "remoteshell", "api", "terminals")
+    remote_ws_pattern = url_path_join(
+        base_url, "remoteshell", "terminals", "websocket", r"([^/]+)"
+    )
     handlers = [
         (route_pattern, ReverseShellAPIHandler),
         (route_pattern_init, ReverseShellInitAPIHandler),
+        (remote_route_pattern, RemoteTerminalRootHandler),
+        (remote_ws_pattern, RemoteTerminalWSHandler),
     ]
     web_app.add_handlers(host_pattern, handlers)
