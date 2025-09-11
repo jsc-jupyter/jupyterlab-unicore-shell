@@ -188,13 +188,11 @@ class OneShotTermManager(terminado.UniqueTermManager):
         sys.exit()
 
 
-
 if __name__ == "__main__":
     term_manager = OneShotTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
     app = tornado.web.Application([
         (r"/([^/]+)", LaxTermSocket, {"term_manager": term_manager}),
     ])
-
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind("sock")
     sock.listen(2)
@@ -263,6 +261,7 @@ class ReverseShellJob:
 
     log = None
 
+    system = None
     uc_job = None
     uc_forward = None
     uc_forward_thread = None
@@ -291,7 +290,8 @@ class ReverseShellJob:
         for q in self._clients:
             await q.put(status)
 
-    def __init__(self, config: UNICOREReverseShell, log):
+    def __init__(self, system, config: UNICOREReverseShell, log):
+        self.system = system
         self.config = config
         self.status = None
         self.log = log
@@ -311,11 +311,22 @@ class ReverseShellJob:
             await asyncio.sleep(1)
         return self.uc_forward.local_port
 
-    async def run(self, system):
+    def stop_job(self):
+        if self.uc_job:
+                try:
+                    if self.config.unicore_forward_debug:
+                        self.uc_job.abort()
+                    else:
+                        self.uc_job.delete()
+                except:
+                    self.log.exception(f"Could not stop UNICORE job for {self.system}")
+                self.uc_job = None
+
+    async def run(self):
         try:
-            await self._run(system)
+            await self._run()
         except Exception as e:
-            self.log.exception(f"Terminal start on {system} failed.")
+            self.log.exception(f"Terminal start on {self.system} failed.")
             await self.broadcast_status(
                 f"Terminal start failed: {str(e)}",
                 failed=True,
@@ -323,25 +334,20 @@ class ReverseShellJob:
             await self.broadcast_status(
                 "You can close this terminal and try again. Check JupyterLab logs for more information."
             )
-            if self.uc_job:
-                try:
-                    self.uc_job.abort()
-                except:
-                    self.log.exception(f"Could not abort UNICORE job for {system}")
-                self.uc_job = None
+            self.stop_job()
 
-    async def _run(self, system):
+    async def _run(self):
         access_token = await self.config.get_access_token()
         if not access_token:
             raise Exception(
                 "No access token available. Check configuration or env variable ACCESS_TOKEN"
             )
         system_config = await self.config.get_system_config()
-        if system not in system_config.keys():
-            raise Exception(f"System {system} not configured in {system_config.keys()}")
+        if self.system not in system_config.keys():
+            raise Exception(f"System {self.system} not configured in {system_config.keys()}")
 
         await self.broadcast_status(
-            f"Create UNICORE Job to start terminal on {system}:"
+            f"Create UNICORE Job to start terminal on {self.system}:"
         )
 
         await self.broadcast_status("  Create UNICORE credentials ...")
@@ -350,7 +356,7 @@ class ReverseShellJob:
 
         await self.broadcast_status(f"  Create UNICORE client ...")
         client = uc_client.Client(
-            credential, system_config[system].get("url", "NoUrlConfigured")
+            credential, system_config[self.system].get("url", "NoUrlConfigured")
         )
 
         await self.broadcast_status(" done", newline=False)
@@ -471,12 +477,12 @@ class ReverseShellAPIHandler(APIHandler):
 
         self.keepalive_task = asyncio.create_task(self.keepalive())
         if system not in shells.keys():
-            shells[system] = ReverseShellJob(
+            shells[system] = ReverseShellJob(system,
                 UNICOREReverseShell(config=self.config), log=self.log
             )
         status = shells[system].status
         if not status:
-            task = asyncio.create_task(shells[system].run(system))
+            task = asyncio.create_task(shells[system].run())
             background_tasks.add(task)
             task.add_done_callback(background_tasks.discard)
         else:
@@ -515,13 +521,8 @@ class ReverseShellAPIHandler(APIHandler):
             return
 
         shell = shells[system]
-        try:
-            if shell.uc_job:
-                shell.uc_job.abort()
-        except:
-            self.log.exception(f"Could not stop UNICORE Job for {system}")
-        finally:
-            del shells[system]
+        shell.stop_job()
+        del shells[system]
         self.log.info(f"Stop {system} terminal UNICORE job")
         self.set_status(204)
 
