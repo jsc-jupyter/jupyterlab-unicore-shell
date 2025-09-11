@@ -135,6 +135,22 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
     }
   }
 
+  private _startKeepAlive(): void {
+    if (!this.session) {
+      return;
+    }
+    setInterval(() => {
+      if (this.session?.connectionStatus === 'connected') {
+        try {
+          // send a benign no-op control message
+          this.session.send({ type: 'stdin', content: [''] });
+        } catch (e) {
+          console.warn('Keepalive failed', e);
+        }
+      }
+    }, 20000);
+  }
+
   private _waitForTerminal(system: string) {
     retrieveShell(system, data => this.printStatus(data));
   }
@@ -373,6 +389,8 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
       this._initialConnection,
       this
     );
+
+    this._startKeepAlive();
   }
 
   /**

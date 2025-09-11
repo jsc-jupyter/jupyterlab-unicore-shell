@@ -13,6 +13,7 @@ from tornado import web
 from tornado.iostream import StreamClosedError
 from traitlets import Any
 from traitlets import Bool
+from traitlets import List
 from traitlets.config import Configurable
 
 background_tasks = set()
@@ -64,7 +65,6 @@ class UNICOREReverseShell(Configurable):
         def getUrl(s):
             return f"https://unicore.fz-juelich.de/{s}/rest/core"
 
-        allowed_systems = ["JUWELS", "JURECA", "JUPITER", "JUSUF", "DEEP"]
         ret = {}
 
         for entry in entitlements:
@@ -73,9 +73,7 @@ class UNICOREReverseShell(Configurable):
                 account = match.group("account")
                 system = match.group("systempartition")
                 if account == preferred_username:
-                    allowed_system = [
-                        x for x in allowed_systems if system.startswith(x)
-                    ]
+                    allowed_system = [x for x in self.systems if system.startswith(x)]
                     if len(allowed_system) > 0 and allowed_system[0] not in ret.keys():
                         ret[allowed_system[0]] = {"url": getUrl(allowed_system[0])}
 
@@ -85,6 +83,18 @@ class UNICOREReverseShell(Configurable):
         example_system_config,
         help="""
         Dict containing the UNICORE/X urls for supported systems.
+        """,
+    )
+
+    systems = List(
+        default_value=[
+            x
+            for x in os.environ.get("JUPYTERLAB_UNICORE_SHELL_SYSTEMS", "").split(",")
+            if x
+        ],
+        help="""
+        List containing the activated UNICORE/X systems.
+        Optional parameter, can be used within c.UNICOREReverseShell.system_config .
         """,
     )
 
@@ -313,14 +323,14 @@ class ReverseShellJob:
 
     def stop_job(self):
         if self.uc_job:
-                try:
-                    if self.config.unicore_forward_debug:
-                        self.uc_job.abort()
-                    else:
-                        self.uc_job.delete()
-                except:
-                    self.log.exception(f"Could not stop UNICORE job for {self.system}")
-                self.uc_job = None
+            try:
+                if self.config.unicore_forward_debug:
+                    self.uc_job.abort()
+                else:
+                    self.uc_job.delete()
+            except:
+                self.log.exception(f"Could not stop UNICORE job for {self.system}")
+            self.uc_job = None
 
     async def run(self):
         try:
@@ -344,7 +354,9 @@ class ReverseShellJob:
             )
         system_config = await self.config.get_system_config()
         if self.system not in system_config.keys():
-            raise Exception(f"System {self.system} not configured in {system_config.keys()}")
+            raise Exception(
+                f"System {self.system} not configured in {system_config.keys()}"
+            )
 
         await self.broadcast_status(
             f"Create UNICORE Job to start terminal on {self.system}:"
@@ -476,8 +488,8 @@ class ReverseShellAPIHandler(APIHandler):
 
         self.keepalive_task = asyncio.create_task(self.keepalive())
         if system not in shells.keys():
-            shells[system] = ReverseShellJob(system,
-                UNICOREReverseShell(config=self.config), log=self.log
+            shells[system] = ReverseShellJob(
+                system, UNICOREReverseShell(config=self.config), log=self.log
             )
         status = shells[system].status
         if not status:
@@ -573,7 +585,9 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
 
         """Proxy WS to remote terminado"""
         remote_url = f"ws://127.0.0.1:{port}/{name}"
-        self.client = tornado.websocket.websocket_connect(remote_url)
+        self.client = tornado.websocket.websocket_connect(
+            remote_url, ping_interval=20, ping_timeout=30
+        )
         self.remote = await self.client
 
         async def pump_remote():
