@@ -65,6 +65,20 @@ export async function listSystems(): Promise<string[]> {
   return systems;
 }
 
+export async function listOpenSessions(): Promise<string[]> {
+  let sessions: string[] = [];
+  try {
+    const data = await requestAPI<any>('list_sessions');
+    sessions = data;
+  } catch (reason) {
+    console.error(
+      `UNICORE ReverseShell: Could not receive sessions.\n${reason}`
+    );
+    throw new Error(`Failed to fetch systems\n${reason}`);
+  }
+  return sessions;
+}
+
 export function retrieveShell(
   system: string,
   onMessage: (message: IShellStatusEvent) => void,

@@ -197,8 +197,6 @@ class LaxTermSocket(terminado.TermSocket):
 class OneShotTermManager(terminado.UniqueTermManager):
     def client_disconnected(self, websocket) -> None:
         super().client_disconnected(websocket)
-        sys.exit()
-
 
 if __name__ == "__main__":
     term_manager = OneShotTermManager(shell_command=["bash"], term_settings={"cwd": os.path.expanduser("~")})
@@ -316,7 +314,9 @@ class ReverseShellJob:
         )
         self.uc_forward.quiet = not self.config.unicore_forward_debug
         self.uc_forward_thread = threading.Thread(
-            target=self.uc_forward.run, kwargs={"local_port": 0}, daemon=True
+            target=self.uc_forward.run,
+            kwargs={"local_port": 0, "keep_alive": True},
+            daemon=True,
         )
         self.uc_forward_thread.start()
         while self.uc_forward.local_port == 0:
@@ -484,6 +484,12 @@ class ReverseShellAPIHandler(APIHandler):
             self.log.exception("Close keepalive")
 
     async def get(self, system):
+        if system == "list_sessions":
+            sessions = list(shells.keys())
+            self.set_status(200)
+            self.finish(json.dumps(sessions, sort_keys=True))
+            return
+
         self.set_header("Content-Type", "text/event-stream")
         self.set_header("Cache-Control", "no-cache")
         self.set_header("Connection", "keep-alive")
@@ -536,6 +542,7 @@ class ReverseShellAPIHandler(APIHandler):
         shell = shells[system]
         shell.stop_job()
         del shells[system]
+
         self.log.info(f"Stop {system} terminal UNICORE job")
         self.set_status(204)
 
@@ -587,10 +594,10 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
 
         """Proxy WS to remote terminado"""
         remote_url = f"ws://127.0.0.1:{port}/{name}"
-        self.client = tornado.websocket.websocket_connect(
-            remote_url, ping_interval=20, ping_timeout=30
+
+        self.remote = await tornado.websocket.websocket_connect(
+            remote_url, ping_interval=8, ping_timeout=5
         )
-        self.remote = await self.client
 
         async def pump_remote():
             try:

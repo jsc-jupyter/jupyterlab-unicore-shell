@@ -143,12 +143,12 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
       if (this.session?.connectionStatus === 'connected') {
         try {
           // send a benign no-op control message
-          this.session.send({ type: 'stdin', content: [''] });
+          this.session?.send({ type: 'stdin', content: [''] });
         } catch (e) {
           console.warn('Keepalive failed', e);
         }
       }
-    }, 20000);
+    }, 8000);
   }
 
   private _waitForTerminal(system: string) {

@@ -12,7 +12,7 @@ import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { ITerminal } from '@jupyterlab/terminal';
 
 import { ITranslator } from '@jupyterlab/translation';
-import { listSystems, deleteShell } from './handler';
+import { listSystems, deleteShell, listOpenSessions } from './handler';
 import { LazyTerminal } from './reverseterminal';
 
 /**
@@ -90,6 +90,11 @@ async function activate(
             widget.node.dataset.myCustomId ===
             `${system.toLowerCase()}-terminal-001`
           ) {
+            if (!(widget instanceof LazyTerminal)) {
+              // close placeholder widget
+              widget.close();
+              break;
+            }
             const current = app.shell.currentWidget;
             if (current && current.id.startsWith('launcher')) {
               current.close();
@@ -98,7 +103,6 @@ async function activate(
             return;
           }
         }
-
         remoteTerminal = new LazyTerminal(system, options, translator);
         remoteTerminal.title.icon = terminalIcon;
         remoteTerminal.id = `${system.toLowerCase()}-terminal-001`;
@@ -109,7 +113,6 @@ async function activate(
             console.log('Failed to remove job:', err);
           });
         });
-
         const current = app.shell.currentWidget;
         app.shell.add(remoteTerminal, 'main');
         if (current && current.id.startsWith('launcher')) {
@@ -140,6 +143,20 @@ async function activate(
       });
     }
   }
+  app.restored.then(() => {
+    void (async () => {
+      const sessions = await listOpenSessions();
+      for (const session of sessions) {
+        console.log(`Restore terminal for ${session}`);
+        const command = `reverse-unicore-terminal-${session}:create`;
+        if (commands.hasCommand(command)) {
+          await commands.execute(command);
+        } else {
+          console.warn(`Command not found: ${command}`);
+        }
+      }
+    })();
+  });
 }
 
 export default plugin;
