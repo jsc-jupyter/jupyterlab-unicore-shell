@@ -376,7 +376,6 @@ class ReverseShellJob:
 
         await self.broadcast_status("  Submit UNICORE Job ...")
         self.uc_job = client.new_job(job_description)
-        self.uc_job.cache_time = -1
 
         await self.broadcast_status(" done", newline=False)
         status = None
@@ -393,7 +392,7 @@ class ReverseShellJob:
                     f"  Waiting for UNICORE Job to start. Current Status: {self.uc_job.status} ..."
                 )
             status = self.uc_job.status
-            await asyncio.sleep(1)
+            await asyncio.sleep(uc_client._DEFAULT_CACHE_TIME)
 
         if self.uc_job.status in [
             uc_client.JobStatus.FAILED,
