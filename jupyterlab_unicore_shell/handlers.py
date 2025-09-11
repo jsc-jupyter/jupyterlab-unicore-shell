@@ -81,6 +81,7 @@ class UNICOREReverseShell(Configurable):
 
     system_config = Any(
         example_system_config,
+        config=True,
         help="""
         Dict containing the UNICORE/X urls for supported systems.
         """,
@@ -92,6 +93,7 @@ class UNICOREReverseShell(Configurable):
             for x in os.environ.get("JUPYTERLAB_UNICORE_SHELL_SYSTEMS", "").split(",")
             if x
         ],
+        config=True,
         help="""
         List containing the activated UNICORE/X systems.
         Optional parameter, can be used within c.UNICOREReverseShell.system_config .
