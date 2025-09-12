@@ -239,15 +239,15 @@ if __name__ == "__main__":
     def shutdown_if_still_inactive():
         if not LaxTermSocket.active_clients:
             print(f"{datetime.now()} - No clients connected for 600s. Shutting down.", flush=True)
-            term_manager.shutdown()
             loop.stop()
+            sys.exit(0)
         else:
             print(f"{datetime.now()} - A client connected again. Canceling shutdown.", flush=True)
 
     def shutdown():
         print(f"{datetime.now()} - Shutting down server...", flush=True)
-        term_manager.shutdown()
         loop.stop()
+        sys.exit(0)
 
     # Periodic check
     checker = tornado.ioloop.PeriodicCallback(check_inactive, 10000)
@@ -257,7 +257,7 @@ if __name__ == "__main__":
         print(f"{datetime.now()} - Start listening.", flush=True)
         loop.start()
     finally:
-        term_manager.shutdown()
+        
 """.replace(
             "{debug}", str(debug)
         )
@@ -606,7 +606,7 @@ class RemoteTerminalRootHandler(APIHandler):
 
 class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
     _keepalive_task = None
-    debug = True
+    debug = False
     remote = None
 
     async def open(self, name):
