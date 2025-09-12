@@ -650,7 +650,8 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
         try:
             while True:
                 await asyncio.sleep(10)
-                print(f"{datetime.now()}--------- Keepalive loop", flush=True)
+                if self.debug:
+                    print(f"{datetime.now()}--------- Keepalive loop", flush=True)
                 if self.remote:
                     try:
                         if self.debug:
@@ -686,7 +687,8 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
                 )
                 traceback.print_exc()
         finally:
-            print(f"{datetime.now()}--------- Keepalive ended", flush=True)
+            if self.debug:
+                print(f"{datetime.now()}--------- Keepalive ended", flush=True)
 
     async def write_message(self, message, binary=False):
         if self.debug:
