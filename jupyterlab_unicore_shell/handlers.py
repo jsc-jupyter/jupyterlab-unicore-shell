@@ -3,6 +3,7 @@ import inspect
 import json
 import os
 import threading
+from datetime import datetime
 
 import pyunicore.client as uc_client
 import pyunicore.credentials as uc_credentials
@@ -167,6 +168,7 @@ python3 terminal.py
         return _unicore_shell_code
 
     def default_unicore_python_code(self):
+        debug = self.unicore_forward_debug
         return """
 import os
 import socket
@@ -175,11 +177,27 @@ import terminado
 import tornado.httpserver
 import tornado.ioloop
 import tornado.web
+from tornado import gen
 
 from datetime import datetime
 
+debug = {debug}
+
 class LaxTermSocket(terminado.TermSocket):
     active_clients = set()
+
+    @gen.coroutine
+    def on_message(self, message):
+        if debug:
+            print(f"{datetime.now()}--------- OnMessage", flush=True)
+            print(f"{datetime.now()}--------- {message}", flush=True)
+        return super().on_message(message)
+        
+    def send_json_message(self, content):
+        if debug:
+            print(f"{datetime.now()}--------- SendMessage", flush=True)
+            print(f"{datetime.now()}--------- {content}", flush=True)
+        return super().send_json_message(content)
 
     def check_origin(self, origin):
         return True
@@ -240,7 +258,9 @@ if __name__ == "__main__":
         loop.start()
     finally:
         term_manager.shutdown()
-"""
+""".replace(
+            "{debug}", str(debug)
+        )
 
     unicore_python_code = Any(
         default_value=default_unicore_python_code,
@@ -586,10 +606,12 @@ class RemoteTerminalRootHandler(APIHandler):
 
 class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
     _keepalive_task = None
-    _keepalive_interval = 15
+    debug = True
     remote = None
 
     async def open(self, name):
+        if self.debug:
+            print(f"{datetime.now()}--------- Open", flush=True)
         if name not in shells.keys():
             raise Exception(f"WebSocket for {name} not available.")
         if not shells[name].port:
@@ -601,9 +623,12 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
 
         if self.remote:
             try:
+                if self.debug:
+                    print(f"{datetime.now()}--------- Open -> Close remote")
                 self.remote.close()
             except:
-                pass
+                if self.debug:
+                    print(f"{datetime.now()}--------- Could not close websocket")
 
         self.remote = await tornado.websocket.websocket_connect(remote_url)
 
@@ -626,24 +651,70 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
         """Background task that sends empty stdin messages every 10s."""
         try:
             while True:
-                await asyncio.sleep(self._keepalive_interval)
+                await asyncio.sleep(10)
+                print(f"{datetime.now()}--------- Keepalive loop", flush=True)
                 if self.remote:
                     try:
+                        if self.debug:
+                            print(
+                                f"{datetime.now()}--------- Send empty keepalive",
+                                flush=True,
+                            )
                         await self.remote.write_message(
                             {"type": "stdin", "content": [""]}
                         )
+                        # Optional: log for debugging
                     except Exception:
+                        if self.debug:
+                            import traceback
+
+                            print(
+                                f"{datetime.now()}--------- Keepalive task exception!",
+                                flush=True,
+                            )
+                            traceback.print_exc()
                         self.close()
                         break
                 else:
+                    print(f"{datetime.now()}--------- Closing keepalive", flush=True)
+                    print(self.remote, flush=True)
                     break
         except Exception:
-            pass
+            if self.debug:
+                import traceback
+
+                print(
+                    f"{datetime.now()}--------- Keepalive task exception!", flush=True
+                )
+                traceback.print_exc()
+        finally:
+            print(f"{datetime.now()}--------- Keepalive ended", flush=True)
+
+    async def write_message(self, message, binary=False):
+        if self.debug:
+            print(f"{datetime.now()}--------- Write Message", flush=True)
+            print(f"{datetime.now()}--------- : {message}", flush=True)
+        return super().write_message(message, binary)
+
+    async def on_ping(self, data):
+        if self.debug:
+            print(f"{datetime.now()}--------- Ping", flush=True)
+        return super().on_ping(data)
+
+    async def on_pong(self, data):
+        if self.debug:
+            print(f"{datetime.now()}--------- Pong", flush=True)
+        return super().on_pong(data)
 
     async def on_message(self, message):
+        if self.debug:
+            print(f"{datetime.now()}--------- OnMessage", flush=True)
+            print(f"{datetime.now()}--------- : {message}", flush=True)
         await self.remote.write_message(message)
 
     def on_close(self):
+        if self.debug:
+            print(f"{datetime.now()}--------- Close", flush=True)
         if self.remote:
             self.remote.close()
         if self._keepalive_task:

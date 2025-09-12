@@ -147,7 +147,7 @@ export class LazyTerminal extends Widget implements ITerminal.ITerminal {
           console.warn('Keepalive failed', e);
         }
       }
-    }, 15000);
+    }, 8000);
   }
 
   private _waitForTerminal(system: string) {
