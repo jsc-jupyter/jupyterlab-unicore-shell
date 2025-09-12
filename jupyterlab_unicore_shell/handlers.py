@@ -253,10 +253,8 @@ if __name__ == "__main__":
     checker = tornado.ioloop.PeriodicCallback(check_inactive, 10000)
     checker.start()
 
-    try:
-        print(f"{datetime.now()} - Start listening.", flush=True)
-        loop.start()
-    finally:
+    print(f"{datetime.now()} - Start listening.", flush=True)
+    loop.start()
         
 """.replace(
             "{debug}", str(debug)
