@@ -21,7 +21,7 @@ background_tasks = set()
 
 class UNICOREReverseShell(Configurable):
     enabled = Bool(
-        os.environ.get("JUPYTERLAB_UNICORE_SHELL_ENABLED", "false").lower()
+        os.environ.get("JUPYTERLAB_UNICORE_SHELL_ENABLED", "true").lower()
         in ["1", "true"],
         config=True,
         help=("Enable extension backend"),
@@ -195,7 +195,7 @@ class LaxTermSocket(terminado.TermSocket):
         print(f"{datetime.now()} - Client disconnected. Active: {len(self.active_clients)}", flush=True)
 
 class OneShotTermManager(terminado.UniqueTermManager):
-    def client_disconnected(self, websocket) -> None:
+    def client_disconnected(self, websocket):
         super().client_disconnected(websocket)
 
 if __name__ == "__main__":
@@ -215,12 +215,12 @@ if __name__ == "__main__":
     # Check every 10 seconds if no clients are connected
     def check_inactive():
         if not LaxTermSocket.active_clients:
-            print(f"{datetime.now()} - No clients connected. Scheduling shutdown after 60s...", flush=True)
-            loop.call_later(60, shutdown_if_still_inactive)
+            print(f"{datetime.now()} - No clients connected. Scheduling shutdown after 600s...", flush=True)
+            loop.call_later(600, shutdown_if_still_inactive)
 
     def shutdown_if_still_inactive():
         if not LaxTermSocket.active_clients:
-            print(f"{datetime.now()} - No clients connected for 60s. Shutting down.", flush=True)
+            print(f"{datetime.now()} - No clients connected for 600s. Shutting down.", flush=True)
             term_manager.shutdown()
             loop.stop()
         else:
@@ -585,6 +585,10 @@ class RemoteTerminalRootHandler(APIHandler):
 
 
 class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
+    _keepalive_task = None
+    _keepalive_interval = 15
+    remote = None
+
     async def open(self, name):
         if name not in shells.keys():
             raise Exception(f"WebSocket for {name} not available.")
@@ -595,9 +599,13 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
         """Proxy WS to remote terminado"""
         remote_url = f"ws://127.0.0.1:{port}/{name}"
 
-        self.remote = await tornado.websocket.websocket_connect(
-            remote_url, ping_interval=8, ping_timeout=5
-        )
+        if self.remote:
+            try:
+                self.remote.close()
+            except:
+                pass
+
+        self.remote = await tornado.websocket.websocket_connect(remote_url)
 
         async def pump_remote():
             try:
@@ -612,6 +620,25 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
                 self.close()
 
         IOLoop.current().spawn_callback(pump_remote)
+        self._keepalive_task = asyncio.create_task(self._keepalive_loop())
+
+    async def _keepalive_loop(self):
+        """Background task that sends empty stdin messages every 10s."""
+        try:
+            while True:
+                await asyncio.sleep(self._keepalive_interval)
+                if self.remote:
+                    try:
+                        await self.remote.write_message(
+                            {"type": "stdin", "content": [""]}
+                        )
+                    except Exception:
+                        self.close()
+                        break
+                else:
+                    break
+        except Exception:
+            pass
 
     async def on_message(self, message):
         await self.remote.write_message(message)
@@ -619,6 +646,12 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
     def on_close(self):
         if self.remote:
             self.remote.close()
+        if self._keepalive_task:
+            try:
+                self._keepalive_task.cancel()
+            except:
+                pass
+            self._keepalive_task = None
 
 
 def setup_handlers(web_app):
