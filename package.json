@@ -1,6 +1,6 @@
 {
     "name": "jupyterlab-unicore-shell",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "description": "A JupyterLab extension to run Remote Terminals via UNICORE.",
     "keywords": [
         "jupyter",
