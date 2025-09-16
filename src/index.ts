@@ -3,7 +3,7 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 
-import { ICommandPalette } from '@jupyterlab/apputils';
+import { ICommandPalette, IThemeManager } from '@jupyterlab/apputils';
 import { ILauncher } from '@jupyterlab/launcher';
 import { terminalIcon } from '@jupyterlab/ui-components';
 
@@ -25,7 +25,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   id: 'jupyterlab-unicore-shell:plugin',
   description: 'A JupyterLab extension to add UNICORE reverse shells.',
   autoStart: true,
-  requires: [ILauncher, ISettingRegistry],
+  requires: [ILauncher, ISettingRegistry, IThemeManager],
   optional: [ICommandPalette],
   activate: activate
 };
@@ -34,6 +34,7 @@ async function activate(
   app: JupyterFrontEnd,
   launcher: ILauncher | null,
   settingRegistry: ISettingRegistry,
+  thememanager: IThemeManager,
   palette: ICommandPalette | null,
   translator: ITranslator | undefined
 ): Promise<void> {
@@ -54,6 +55,10 @@ async function activate(
       }
     }
   }
+
+  thememanager.themeChanged.connect(() => {
+    updateTerminals();
+  });
 
   settingRegistry
     .load('@jupyterlab/terminal-extension:plugin')

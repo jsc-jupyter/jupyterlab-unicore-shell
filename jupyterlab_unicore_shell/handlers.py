@@ -192,7 +192,7 @@ class LaxTermSocket(terminado.TermSocket):
             print(f"{datetime.now()}--------- OnMessage", flush=True)
             print(f"{datetime.now()}--------- {message}", flush=True)
         return super().on_message(message)
-        
+
     def send_json_message(self, content):
         if debug:
             print(f"{datetime.now()}--------- SendMessage", flush=True)
@@ -659,10 +659,7 @@ class RemoteTerminalWSHandler(tornado.websocket.WebSocketHandler):
                                 f"{datetime.now()}--------- Send empty keepalive",
                                 flush=True,
                             )
-                        await self.remote.write_message(
-                            {"type": "stdin", "content": [""]}
-                        )
-                        # Optional: log for debugging
+                        await self.remote.write_message('["stdin",""]')
                     except Exception:
                         if self.debug:
                             import traceback
