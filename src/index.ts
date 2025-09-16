@@ -3,7 +3,11 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 
-import { ICommandPalette, IThemeManager } from '@jupyterlab/apputils';
+import {
+  ICommandPalette,
+  IThemeManager,
+  WidgetTracker
+} from '@jupyterlab/apputils';
 import { ILauncher } from '@jupyterlab/launcher';
 import { terminalIcon } from '@jupyterlab/ui-components';
 
@@ -40,7 +44,9 @@ async function activate(
 ): Promise<void> {
   console.log('JupyterLab extension jupyterlab-unicore-shell is activated!');
   const { commands } = app;
-  let remoteTerminal: LazyTerminal;
+  const terminalTracker = new WidgetTracker<LazyTerminal>({
+    namespace: 'jupyterlabunicoreshell:terminals'
+  });
 
   const options: Partial<ITerminal.IOptions> = {};
 
@@ -72,12 +78,12 @@ async function activate(
     });
 
   function updateTerminals(): void {
-    if (remoteTerminal) {
+    terminalTracker.forEach(terminal => {
       Object.keys(options).forEach(key => {
         const typedKey = key as keyof ITerminal.IOptions;
-        remoteTerminal.setOption(typedKey, options[typedKey]);
+        terminal.setOption(typedKey, options[typedKey]);
       });
-    }
+    });
   }
 
   const systems = await listSystems();
@@ -108,7 +114,7 @@ async function activate(
             return;
           }
         }
-        remoteTerminal = new LazyTerminal(system, options, translator);
+        const remoteTerminal = new LazyTerminal(system, options, translator);
         remoteTerminal.title.icon = terminalIcon;
         remoteTerminal.id = `${system.toLowerCase()}-terminal-001`;
         remoteTerminal.node.dataset.myCustomId = `${system.toLowerCase()}-terminal-001`;
@@ -123,7 +129,7 @@ async function activate(
         if (current && current.id.startsWith('launcher')) {
           current.close();
         }
-
+        terminalTracker.add(remoteTerminal);
         await remoteTerminal.shellTermReady;
         if (!remoteTerminal._failed) {
           await remoteTerminal.createLateSession();
